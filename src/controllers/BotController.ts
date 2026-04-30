@@ -5,7 +5,10 @@ export enum PasoBot {
     INICIO = 'INICIO',
     MENU_PRINCIPAL = 'MENU_PRINCIPAL',
     ESPERANDO_DNI = 'ESPERANDO_DNI',
-    HABLANDO_CON_HUMANO = 'HABLANDO_CON_HUMANO'
+    HABLANDO_CON_HUMANO = 'HABLANDO_CON_HUMANO',
+    MENU_MORA = 'MENU_MORA',
+    MENU_ACTIVO = 'MENU_ACTIVO',
+    MENU_NUEVO = 'MENU_NUEVO'
 }
 
 export class BotController {
@@ -88,12 +91,82 @@ export class BotController {
         // Usamos la clase de base de datos que armamos al principio
         const socio = await this.db.buscarSocioPorDNI(dni);
 
-        if (socio) {
-            const respuesta = `👤 *Socio Encontrado*\n\nNombre: ${socio.nombre}\nEstado: ${socio.estado}\n💰 *Deuda Total: $${socio.deudaTotal}*\n\n_Escribí 'Hola' para volver al inicio._`;
-            await enviarMensaje(respuesta);
-            this.sesionesActivas.delete(numero); // Terminó el flujo, lo sacamos del Map
-        } else {
-            await enviarMensaje("❌ No encontramos ningún socio asociado a ese DNI en nuestra base. Verificá el número e intentá de nuevo, o escribí 'Volver' para salir.");
+        if (!socio || socio.estado === 'CANCELADO') {
+            // Si no existe o está cancelado, va al menú de nuevos
+            const msjNuevo = 
+            `Actualmente no registramos créditos activos a tu nombre.\n\n
+            ¿En qué podemos ayudarte?\n
+            1️⃣ Solicitar un crédito\n
+            2️⃣ Hablar con un asesor\n
+            3️⃣ Finalizar consulta`;
+
+            await enviarMensaje(msjNuevo);
+            this.sesionesActivas.set(numero, PasoBot.MENU_NUEVO);
+            return;
         }
+
+        if (socio.estado === 'REFI') {
+            // Si tiene deuda, lo mandamos al menú de Mora
+            let detalleDeuda = 
+            `👤 *Hola ${socio.nombre}*\n
+            Registramos un saldo pendiente de *$${socio.deudaTotal}*.\n\n`;
+            
+            // Si queremos ser súper específicos gracias a nuestra nueva base de datos:
+            if (socio.cbu.esMora) detalleDeuda += 
+            `🔸 Deuda CBU: $${socio.cbu.deuda}\n`;
+            if (socio.haberes.esMora) detalleDeuda += 
+            `🔸 Deuda Haberes: $${socio.haberes.deuda}\n`;
+
+            detalleDeuda += 
+            `\nSeleccioná una opción:\n
+            1️⃣ Ver opciones de pago\n
+            2️⃣ Informar un pago realizado\n
+            3️⃣ Hablar con cobranzas\n
+            4️⃣ Salir`;
+            
+            await enviarMensaje(detalleDeuda);
+            this.sesionesActivas.set(numero, PasoBot.MENU_MORA);
+            return;
+        }
+
+        if (socio.estado === 'ACTIVO') {
+            // 1. Empezamos con el saludo
+            let mensaje = 
+            `👤 *Hola ${socio.nombre}*\n\n`;
+
+            // 2. Lógica de detección de créditos activos
+            if (socio.haberes.esActivo && socio.cbu.esActivo) {
+                // CASO: Tiene los dos activos
+                mensaje += 
+                `Vemos que tenés *dos créditos vigentes* con nosotros (uno por Haberes y otro por CBU).`;
+            } 
+            else if (socio.haberes.esActivo) {
+                // CASO: Solo Haberes activo (el de CBU puede no existir o estar cancelado)
+                mensaje += 
+                `Tu crédito por *Haberes* se encuentra vigente.`;
+            } 
+            else if (socio.cbu.esActivo) {
+                // CASO: Solo CBU activo (el de Haberes puede no existir o estar cancelado)
+                mensaje += 
+                `Tu crédito por *CBU* se encuentra vigente.`;
+            }
+
+            // 3. Opciones del menú para activos
+            mensaje += 
+            `\n\n¿Qué gestión deseás realizar?\n` +
+                    `1️⃣ Consultar estado de cuenta\n` +
+                    `2️⃣ Solicitar renovación o nuevo monto\n` +
+                    `3️⃣ Modificar mis datos de contacto\n` +
+                    `4️⃣ Hablar con un asesor\n` +
+                    `5️⃣ Salir`;
+
+            await enviarMensaje(mensaje);
+            
+            // 4. Cambiamos el estado de la sesión para que el bot sepa qué opciones esperar ahora
+            this.sesionesActivas.set(numero, PasoBot.MENU_ACTIVO);
+            return;
+}
+
+        
     }
 }

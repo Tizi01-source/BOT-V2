@@ -69,7 +69,7 @@ export class WhatsAppClient {
             console.log(`📩 Mensaje recibido de ${message.from}: ${message.body}`);
 
             // Le pasamos el mensaje al Cerebro y le enseñamos CÓMO responder
-            this.controlador.procesarMensaje(message.from, message.body, async (textoRespuesta: string) => {
+            this.controlador.procesarMensaje(message.from, message.body!, async (textoRespuesta: string) => {
                 await this.client!.sendText(message.from, textoRespuesta);
             });
             
