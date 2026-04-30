@@ -5,14 +5,13 @@ export interface InfoSocio {
     nombre: string;
     dni: string;
     deuda: number;
-    hoja: 'CASHFLOW' | 'REFINANCIACION';
+    hoja: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS';
 }
 
 export class DatabaseManager {
     private doc: GoogleSpreadsheet;
 
     constructor(spreadsheetId: string, clientEmail: string, privateKey: string) {
-        // Configuramos la autenticación de Google
         const serviceAccountAuth = new JWT({
             email: clientEmail,
             key: privateKey.replace(/\\n/g, '\n'),
@@ -33,37 +32,43 @@ export class DatabaseManager {
         }
     }
 
-    public async buscarSocioTotal(dniABuscar: string): Promise<InfoSocio | null> {
-        // Aseguramos que el DNI sea texto para la comparación
-        const dniStr = dniABuscar.trim();
+    // Función auxiliar para arreglar los números con comas y signos $ del Excel
+    private parsearDinero(valor: string | number | undefined): number {
+        if (!valor) return 0;
+        if (typeof valor === 'number') return valor;
+        
+        // Convertimos a string, sacamos signos $, espacios, y cambiamos comas por puntos
+        let limpio = valor.toString().replace('$', '').replace(/\s/g, '').replace(',', '.');
+        const numero = parseFloat(limpio);
+        return isNaN(numero) ? 0 : numero;
+    }
 
-        // 1. Buscar en REFINANCIACION primero (suele ser la deuda más urgente/actualizada)
-        const hojaRefi = this.doc.sheetsByTitle['REFINANCIACION'];
-        if (hojaRefi) {
-            // El header_row en la librería es base 1. La fila 3 de Excel es el encabezado real
-            await hojaRefi.loadHeaderRow(3); 
-            const filas = await hojaRefi.getRows();
-            
-            // Buscamos si el CUIL contiene el DNI
-            const encontrada = filas.find(f => {
-                const cuil = f.get('CUIL')?.toString() || '';
-                return cuil.includes(dniStr);
-            });
-
-            if (encontrada) {
-                return {
-                    nombre: encontrada.get('APELLIDO Y NOMBRE') || 'Socio',
-                    dni: dniStr,
-                    deuda: parseFloat(encontrada.get('MONTO ACTUALIZADO')) || 0,
-                    hoja: 'REFINANCIACION'
-                };
-            }
+    // Función auxiliar para poner Nombres Propios (ej: "PEREZ, JUAN" -> "Juan Perez")
+    private formatearNombre(nombreCrudo: string): string {
+        if (!nombreCrudo) return 'Socio';
+        
+        // Si viene "APELLIDO, NOMBRE" de Refi
+        let partes = nombreCrudo.includes(',') ? nombreCrudo.split(',') : nombreCrudo.split(' ');
+        
+        // Invertimos si vino con coma (para que quede Nombre Apellido) y capitalizamos
+        if (nombreCrudo.includes(',')) {
+            partes = [partes[1], partes[0]]; 
         }
 
-        // 2. Si no está en Refi, buscar en CASHFLOW
+        return partes
+            .map(p => p.trim())
+            .filter(p => p.length > 0)
+            .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
+            .join(' ');
+    }
+
+    public async buscarSocioTotal(dniABuscar: string): Promise<InfoSocio | null> {
+        const dniStr = dniABuscar.trim();
+        let socioEncontrado: InfoSocio | null = null;
+
+        // 1. Buscar en CASHFLOW primero (Cuenta principal)
         const hojaCashflow = this.doc.sheetsByTitle['CASHFLOW'];
         if (hojaCashflow) {
-            // En cashflow el encabezado está en la fila 2
             await hojaCashflow.loadHeaderRow(2); 
             const filas = await hojaCashflow.getRows();
             
@@ -73,20 +78,54 @@ export class DatabaseManager {
             });
 
             if (encontrada) {
-                // Cashflow separa Apellido y Nombre
-                const nombreCompleto = `${encontrada.get('APELLIDO') || ''} ${encontrada.get('NOMBRE') || ''}`.trim();
+                const apellido = encontrada.get('APELLIDO') || '';
+                const nombre = encontrada.get('NOMBRE') || '';
+                const nombreCompleto = this.formatearNombre(`${nombre} ${apellido}`);
                 
-                // Buscamos la columna de deuda (asumo que se llama MONTO, ajustá si es otra)
-                return {
-                    nombre: nombreCompleto || 'Socio',
+                // Usamos la columna DEUDA si existe, sino MONTO
+                let deudaCashflow = this.parsearDinero(encontrada.get('DEUDA'));
+                if (deudaCashflow === 0) deudaCashflow = this.parsearDinero(encontrada.get('MONTO'));
+
+                socioEncontrado = {
+                    nombre: nombreCompleto,
                     dni: dniStr,
-                    deuda: parseFloat(encontrada.get('MONTO')) || 0, 
+                    deuda: deudaCashflow,
                     hoja: 'CASHFLOW'
                 };
             }
         }
 
-        // Si llegó acá, no lo encontró en ningún lado
-        return null;
+        // 2. Buscar en REFINANCIACION
+        const hojaRefi = this.doc.sheetsByTitle['REFINANCIACION'];
+        if (hojaRefi) {
+            await hojaRefi.loadHeaderRow(3); 
+            const filas = await hojaRefi.getRows();
+            
+            const encontrada = filas.find(f => {
+                const cuil = f.get('CUIL')?.toString() || '';
+                return cuil.includes(dniStr);
+            });
+
+            if (encontrada) {
+                const nombreCompleto = this.formatearNombre(encontrada.get('APELLIDO Y NOMBRE') || '');
+                const deudaRefi = this.parsearDinero(encontrada.get('MONTO ACTUALIZADO'));
+
+                if (socioEncontrado) {
+                    // Si ya estaba en Cashflow, le SUMAMOS la deuda de Refi y cambiamos el estado
+                    socioEncontrado.deuda += deudaRefi;
+                    socioEncontrado.hoja = 'AMBAS'; // Marcamos que tiene problemas en ambas
+                } else {
+                    // Si solo estaba en Refi
+                    socioEncontrado = {
+                        nombre: nombreCompleto,
+                        dni: dniStr,
+                        deuda: deudaRefi,
+                        hoja: 'REFINANCIACION'
+                    };
+                }
+            }
+        }
+
+        return socioEncontrado;
     }
 }

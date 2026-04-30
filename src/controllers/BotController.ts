@@ -158,7 +158,7 @@ export class BotController {
         }
 
         // Lógica de ruteo basada en la hoja donde se encontró
-        if (socio.hoja === 'REFINANCIACION') {
+        if (socio.hoja === 'REFINANCIACION' || socio.hoja === 'AMBAS') {
 
             await enviarMensaje(MENUS.generarMenuMora(socio.nombre, socio.deuda));
             this.sesionesActivas.set(numero, PasoBot.MENU_MORA);
@@ -199,7 +199,7 @@ export class BotController {
 
             await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! Que tengas un excelente día. 👋\n\n_Escribí 'Hola' para volver a empezar._");
             this.forzarCierreSesion(numero); // Terminamos la sesión
-            
+
         } else {
             await enviarMensaje(MENUS.OPCION_INVALIDA);
         }
