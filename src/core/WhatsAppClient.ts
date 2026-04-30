@@ -68,6 +68,48 @@ export class WhatsAppClient {
         this.chatsSilenciados.set(telefono, relojModoHumano);
     }
 
+    // Método para gestionar las etiquetas de WhatsApp
+    public async asignarEtiqueta(telefono: string, nombreEtiqueta: string): Promise<void> {
+        if (!this.client) return;
+
+        try {
+            // Traemos todas las etiquetas
+            let etiquetas = await this.client.getAllLabels();
+            
+            // Buscamos si ya existe
+            let etiquetaExistente = etiquetas.find(e => e.name.toUpperCase() === nombreEtiqueta.toUpperCase());
+            
+            let idEtiquetaFinal: string | undefined;
+
+            if (etiquetaExistente && etiquetaExistente.id) {
+                // Si existe, guardamos su ID
+                idEtiquetaFinal = etiquetaExistente.id;
+            } else {
+                // Si no existe, la creamos.
+                console.log(`🏷️ Creando nueva etiqueta en WhatsApp: ${nombreEtiqueta}`);
+                await this.client.addNewLabel(nombreEtiqueta); 
+                
+                // Volvemos a pedir la lista de etiquetas actualizada para obtener el ID de la nueva
+                etiquetas = await this.client.getAllLabels();
+                etiquetaExistente = etiquetas.find(e => e.name.toUpperCase() === nombreEtiqueta.toUpperCase());
+                
+                if (etiquetaExistente && etiquetaExistente.id) {
+                    idEtiquetaFinal = etiquetaExistente.id;
+                }
+            }
+            
+            // Asignamos la etiqueta
+            if (idEtiquetaFinal) {
+                await this.client.addOrRemoveLabels(telefono, [{ labelId: idEtiquetaFinal, type: 'add' }]);
+                console.log(`✅ Etiqueta '${nombreEtiqueta}' agregada a ${telefono}`);
+            } else {
+                console.warn(`⚠️ No se pudo obtener un ID válido para la etiqueta '${nombreEtiqueta}'`);
+            }
+        } catch (error) {
+            console.error(`❌ Error al gestionar la etiqueta '${nombreEtiqueta}':`, error);
+        }
+    }
+
     // Método privado que se queda escuchando todo el tiempo
     private escucharMensajes(): void {
         if (!this.client) return;
@@ -108,10 +150,16 @@ export class WhatsAppClient {
             console.log(`📩 Mensaje recibido de ${message.from}: ${message.body}`);
 
             // Le pasamos el mensaje al Cerebro y le enseñamos CÓMO responder
-            this.controlador.procesarMensaje(message.from, message.body!, async (textoRespuesta: string) => {
-               await this.client!.sendText(telefono, textoRespuesta + '\u200D');
-            });
-            
+            this.controlador.procesarMensaje(
+                telefono, 
+                message.body!, 
+                async (textoRespuesta: string) => {
+                    await this.client!.sendText(telefono, textoRespuesta + '\u200D');
+                },
+                async (nombreEtiqueta: string) => { // 👈 NUEVO: Le pasamos la herramienta
+                    await this.asignarEtiqueta(telefono, nombreEtiqueta);
+                }
+            );            
             // TODO: Acá más adelante vamos a conectar el controlador de los menús
         });
     }

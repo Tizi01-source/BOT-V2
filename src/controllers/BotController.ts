@@ -43,7 +43,12 @@ export class BotController {
     }
 
 
-    public async procesarMensaje(numero: string, texto: string, enviarMensaje: (texto: string) => Promise<void>): Promise<void> {
+    public async procesarMensaje(
+         numero: string,
+         texto: string, 
+         enviarMensaje: (texto: string) => Promise<void>,
+         asignarEtiqueta: (etiqueta: string) => Promise<void>
+    ): Promise<void> {
 
         this.reiniciarTemporizador(numero, enviarMensaje);
         
@@ -68,16 +73,22 @@ export class BotController {
 
             case PasoBot.ESPERANDO_DNI:
 
-                await this.manejadorEsperandoDni(numero, texto, enviarMensaje);
+                await this.manejadorEsperandoDni(numero, texto, enviarMensaje, asignarEtiqueta);
                 break;
                 
             case PasoBot.MENU_NUEVO:
+
+                await this.manejadorMenuNuevo(numero, texto, enviarMensaje);
+                break;
+
             case PasoBot.MENU_ACTIVO:
+
+                await this.manejadorMenuActivo(numero, texto, enviarMensaje);
+                break;
+
             case PasoBot.MENU_MORA:
 
-                // Por ahora, cualquier opción en estos submenús puede llevar a un humano o terminar
-                await enviarMensaje(MENUS.DERIVAR_HUMANO);
-                this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+                await this.manejadorMenuMora(numero, texto, enviarMensaje);
                 break;
 
             case PasoBot.HABLANDO_CON_HUMANO:
@@ -120,7 +131,13 @@ export class BotController {
         }
     }
 
-    private async manejadorEsperandoDni(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
+    private async manejadorEsperandoDni(
+        numero: string, 
+        texto: string, 
+        enviarMensaje: Function, 
+        asignarEtiqueta: Function
+        ): Promise<void> {
+
         const dni = texto.trim();
 
         if (!/^\d+$/.test(dni)) {
@@ -131,22 +148,102 @@ export class BotController {
         await enviarMensaje(MENUS.BUSCANDO);
 
         // Llamamos a la función optimizada
-        // IMPORTANTE: Asegurate de que en Database.ts la función se llame buscarSocioTotal
         const socio = await this.db.buscarSocioTotal(dni);
 
         if (!socio) {
             await enviarMensaje(MENUS.SOCIO_NO_ENCONTRADO);
             this.sesionesActivas.set(numero, PasoBot.MENU_NUEVO);
+            await asignarEtiqueta("SOCIO NUEVO");
             return;
         }
 
         // Lógica de ruteo basada en la hoja donde se encontró
         if (socio.hoja === 'REFINANCIACION') {
+
             await enviarMensaje(MENUS.generarMenuMora(socio.nombre, socio.deuda));
             this.sesionesActivas.set(numero, PasoBot.MENU_MORA);
+            await asignarEtiqueta("SOCIO MORA");
+
         } else if (socio.hoja === 'CASHFLOW') {
+
             await enviarMensaje(MENUS.generarMenuActivo(socio.nombre));
             this.sesionesActivas.set(numero, PasoBot.MENU_ACTIVO);
+            await asignarEtiqueta("SOCIO ACTIVO");
+        }
+    }
+
+    // ==========================================
+    // 🛠️ MANEJADORES DE SUB-MENÚS
+    // ==========================================
+
+    private async manejadorMenuMora(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
+        const opcion = texto.trim();
+        /* Menú Mora: 1. Opciones de pago | 2. Informar pago | 3. Cobranzas | 4. Salir */
+        
+        if (opcion === '1') {
+
+            await enviarMensaje(
+                "Podés ver nuestros planes de pago y medios habilitados ingresando a nuestro portal web o pidiendo hablar con cobranzas.\n\n_Escribí 'Volver' para ir al inicio._");
+
+        } else if (opcion === '2') {
+
+            await enviarMensaje("Por favor, envianos la foto o PDF del comprobante por este medio. Un asesor de cobranzas lo revisará a la brevedad.");
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+
+        } else if (opcion === '3') {
+
+            await enviarMensaje(MENUS.DERIVAR_HUMANO);
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+
+        } else if (opcion === '4') {
+
+            await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! Que tengas un excelente día. 👋\n\n_Escribí 'Hola' para volver a empezar._");
+            this.forzarCierreSesion(numero); // Terminamos la sesión
+            
+        } else {
+            await enviarMensaje(MENUS.OPCION_INVALIDA);
+        }
+    }
+
+    private async manejadorMenuActivo(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
+        const opcion = texto.trim();
+        /* Menú Activo: 1. Estado de cuenta | 2. Solicitar renovación | 3. Modificar datos | 4. Asesor | 5. Salir */
+
+        if (opcion === '1') {
+            await enviarMensaje("Para consultar el detalle exacto de tus cuotas pagas y restantes, te voy a derivar con un asesor de cuentas.");
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+        } else if (opcion === '2') {
+            await enviarMensaje("¡Qué bueno que quieras renovar! 🥳 Un asesor comercial revisará tu margen disponible y se pondrá en contacto.");
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+        } else if (opcion === '3') {
+            await enviarMensaje("Por favor, escribinos por acá qué datos necesitás actualizar (domicilio, teléfono, mail, etc.) y los cambiaremos en el sistema.");
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+        } else if (opcion === '4') {
+            await enviarMensaje(MENUS.DERIVAR_HUMANO);
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+        } else if (opcion === '5') {
+            await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! Que tengas un excelente día. 👋\n\n_Escribí 'Hola' para volver a empezar._");
+            this.forzarCierreSesion(numero);
+        } else {
+            await enviarMensaje(MENUS.OPCION_INVALIDA);
+        }
+    }
+
+    private async manejadorMenuNuevo(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
+        const opcion = texto.trim();
+        /* Menú Nuevo/Cancelado: 1. Solicitar crédito | 2. Asesor | 3. Finalizar */
+
+        if (opcion === '1') {
+            await enviarMensaje("¡Excelente decisión! 🎉 Para iniciar la solicitud de tu nuevo crédito, te comunicaré con el área comercial.");
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+        } else if (opcion === '2') {
+            await enviarMensaje(MENUS.DERIVAR_HUMANO);
+            this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
+        } else if (opcion === '3') {
+            await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! Que tengas un excelente día. 👋\n\n_Escribí 'Hola' para volver a empezar._");
+            this.forzarCierreSesion(numero);
+        } else {
+            await enviarMensaje(MENUS.OPCION_INVALIDA);
         }
     }
 }
