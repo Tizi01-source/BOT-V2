@@ -1,13 +1,16 @@
 import * as wppconnect from '@wppconnect-team/wppconnect';
-import { BotController } from '../controllers/BotController';
+import { BotController, PasoBot } from '../controllers/BotController';
 
 export class WhatsAppClient {
     private client: wppconnect.Whatsapp | null = null;
     private controlador: BotController; 
 
+    private chatsSilenciados: Map<string, NodeJS.Timeout>;
+
     // Cuando creamos el WhatsAppClient, le pasamos el Cerebro
     constructor(controlador: BotController) {
         this.controlador = controlador;
+        this.chatsSilenciados = new Map();
     }
 
     // Iniciamos la conexión con wppconnect
@@ -48,29 +51,65 @@ export class WhatsAppClient {
         }
     }
 
+    // Método para silenciar el bot en un chat específico
+    private activarModoHumano(telefono: string): void {
+        // Si ya estaba silenciado, cancelamos el reloj viejo
+        if (this.chatsSilenciados.has(telefono)) {
+            clearTimeout(this.chatsSilenciados.get(telefono)!);
+        }
+
+        // Lo silenciamos por 30 minutos (1800000 milisegundos)
+        console.log(`👤 MODO HUMANO: Bot silenciado por 30 min. en el chat ${telefono}`);
+        const relojModoHumano = setTimeout(() => {
+            this.chatsSilenciados.delete(telefono);
+            console.log(`🤖 MODO BOT reactivado en el chat ${telefono}`);
+        }, 1800000); 
+
+        this.chatsSilenciados.set(telefono, relojModoHumano);
+    }
+
     // Método privado que se queda escuchando todo el tiempo
     private escucharMensajes(): void {
         if (!this.client) return;
 
         this.client.onMessage((message) => {
+
+            // Identificamos el número de chat (ya sea que me escriban, o que escriba yo)
+            const telefono = message.fromMe ? message.to : message.from;
             
-            // 1. Ignorar mensajes de Grupos
+            // Ignorar mensajes de Grupos
             if (message.isGroupMsg) return;
-
-            // 2. Ignorar Estados / Historias
+            // Ignorar Estados / Historias
             if (message.from === 'status@broadcast') return;
-
-            // 3. Ignorar mensajes de sistema (cambios de foto, seguridad, etc)
+            // Ignorar mensajes de sistema (cambios de foto, seguridad, etc)
             if (message.type === 'e2e_notification' || message.type === 'protocol' || message.type === 'revoked') return;
-
-            // 4. Ignorar llamadas perdidas
+            // Ignorar llamadas perdidas
             if (message.type === 'call_log') return;
+
+            // 3. 👈 NUEVO: Lógica de Modo Humano (Interceptamos los mensajes de salida)
+            if (message.fromMe) {
+                // El truco de Legacy: Si el texto tiene el carácter invisible (\u200D), fue el bot. Lo ignoramos.
+                if (typeof message.body === 'string' && message.body.includes('\u200D')) {
+                    return; 
+                }
+
+                // Si no tiene el carácter invisible, es porque vos agarraste el celular y escribiste!
+                this.activarModoHumano(telefono);
+                // Le avisamos al Cerebro que mate la sesión porque agarraste el chat
+                this.controlador.forzarCierreSesion(telefono); 
+                return; 
+            }
+
+            // 4. Si el chat está en "Modo Humano" (en la lista de silenciados), ignoramos el mensaje de entrada.
+            if (this.chatsSilenciados.has(telefono)) {
+                return;
+            }
 
             console.log(`📩 Mensaje recibido de ${message.from}: ${message.body}`);
 
             // Le pasamos el mensaje al Cerebro y le enseñamos CÓMO responder
             this.controlador.procesarMensaje(message.from, message.body!, async (textoRespuesta: string) => {
-                await this.client!.sendText(message.from, textoRespuesta);
+               await this.client!.sendText(telefono, textoRespuesta + '\u200D');
             });
             
             // TODO: Acá más adelante vamos a conectar el controlador de los menús

@@ -14,14 +14,38 @@ export enum PasoBot {
 export class BotController {
 
     private sesionesActivas: Map<string, PasoBot>;
+    private temporizadores: Map<string, NodeJS.Timeout>;
     private db: DatabaseManager;
 
     constructor(db: DatabaseManager) {
         this.sesionesActivas = new Map();
+        this.temporizadores = new Map();
         this.db = db;
     }
 
+    // La función mágica que maneja el reloj
+    private reiniciarTemporizador(numero: string, enviarMensaje: Function): void {
+        // Si el usuario ya tenía un reloj corriendo, lo destruimos
+        if (this.temporizadores.has(numero)) {
+            clearTimeout(this.temporizadores.get(numero));
+        }
+
+        // Creamos un reloj nuevo. Si pasan 10 minutos (600000 ms) sin que se cancele, explota y ejecuta esto:
+        const nuevoReloj = setTimeout(async () => {
+            this.sesionesActivas.delete(numero);
+            this.temporizadores.delete(numero);
+            await enviarMensaje(
+                "⏳ Tu sesión expiró por inactividad. Si necesitás hacer otra consulta, escribí *'Hola'* para volver a empezar.");
+        }, 600000); 
+
+        // Guardamos el reloj en nuestra memoria RAM
+        this.temporizadores.set(numero, nuevoReloj);
+    }
+
+
     public async procesarMensaje(numero: string, texto: string, enviarMensaje: (texto: string) => Promise<void>): Promise<void> {
+
+        this.reiniciarTemporizador(numero, enviarMensaje);
         
         if (texto.toLowerCase() === 'hola' || texto.toLowerCase() === 'volver') {
             this.sesionesActivas.set(numero, PasoBot.INICIO);
@@ -59,12 +83,21 @@ export class BotController {
             case PasoBot.HABLANDO_CON_HUMANO:
 
                 // No hacemos nada, el bot ignora hasta que escriban 'volver'
-                
+
                 break;
             default:
                 this.sesionesActivas.delete(numero);
                 await enviarMensaje("Ocurrió un error. Escribí 'Hola' para empezar de nuevo.");
                 break;
+        }
+    }
+
+    // Permite que otra clase (como WhatsApp) mate la sesión de un usuario
+    public forzarCierreSesion(numero: string): void {
+        this.sesionesActivas.delete(numero);
+        if (this.temporizadores.has(numero)) {
+            clearTimeout(this.temporizadores.get(numero));
+            this.temporizadores.delete(numero);
         }
     }
 
