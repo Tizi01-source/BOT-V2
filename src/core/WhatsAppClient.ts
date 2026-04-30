@@ -114,7 +114,7 @@ export class WhatsAppClient {
     private escucharMensajes(): void {
         if (!this.client) return;
 
-        this.client.onMessage((message) => {
+        this.client.onAnyMessage((message) => {
 
             // Identificamos el número de chat (ya sea que me escriban, o que escriba yo)
             const telefono = message.fromMe ? message.to : message.from;
@@ -128,23 +128,31 @@ export class WhatsAppClient {
             // Ignorar llamadas perdidas
             if (message.type === 'call_log') return;
 
-            // 3. 👈 NUEVO: Lógica de Modo Humano (Interceptamos los mensajes de salida)
+            // 1. Extraemos el texto de forma SEGURA.
+            // Si es un string normal, lo tomamos. Si es un archivo/sticker/audio, por ahora lo dejamos vacío.
+            let textoRecibido = typeof message.body === 'string' ? message.body.trim() : "";
+
+            // Lógica de Modo Humano (Interceptamos los mensajes de salida)
             if (message.fromMe) {
                 // El truco de Legacy: Si el texto tiene el carácter invisible (\u200D), fue el bot. Lo ignoramos.
-                if (typeof message.body === 'string' && message.body.includes('\u200D')) {
+                if (textoRecibido.includes('\u200D')) {
                     return; 
                 }
 
-                // Si no tiene el carácter invisible, es porque vos agarraste el celular y escribiste!
+                // Si no tiene el carácter invisible y escribiste algo o mandaste algo, activamos Modo Humano
                 this.activarModoHumano(telefono);
-                // Le avisamos al Cerebro que mate la sesión porque agarraste el chat
                 this.controlador.forzarCierreSesion(telefono); 
-                return; 
+                return;
             }
 
-            // 4. Si el chat está en "Modo Humano" (en la lista de silenciados), ignoramos el mensaje de entrada.
+            // Si el chat está en "Modo Humano", ignoramos lo que nos respondan
             if (this.chatsSilenciados.has(telefono)) {
                 return;
+            }
+
+            // Si el mensaje es de un bot, de sistema, o si nos mandaron puro archivo sin texto, ignoramos para que no explote.
+            if (!textoRecibido || textoRecibido === "") {
+                return; 
             }
 
             console.log(`📩 Mensaje recibido de ${message.from}: ${message.body}`);
@@ -152,15 +160,14 @@ export class WhatsAppClient {
             // Le pasamos el mensaje al Cerebro y le enseñamos CÓMO responder
             this.controlador.procesarMensaje(
                 telefono, 
-                message.body!, 
+                textoRecibido, 
                 async (textoRespuesta: string) => {
                     await this.client!.sendText(telefono, textoRespuesta + '\u200D');
                 },
-                async (nombreEtiqueta: string) => { // 👈 NUEVO: Le pasamos la herramienta
+                async (nombreEtiqueta: string) => {
                     await this.asignarEtiqueta(telefono, nombreEtiqueta);
                 }
             );            
-            // TODO: Acá más adelante vamos a conectar el controlador de los menús
         });
     }
 }
