@@ -127,6 +127,8 @@ export class WhatsAppClient {
             if (message.type === 'e2e_notification' || message.type === 'protocol' || message.type === 'revoked') return;
             // Ignorar llamadas perdidas
             if (message.type === 'call_log') return;
+            // Ignorar Canales de WhatsApp (Newsletters)
+            if (telefono.includes('@newsletter')) return;
 
             // 1. Extraemos el texto de forma SEGURA.
             // Si es un string normal, lo tomamos. Si es un archivo/sticker/audio, por ahora lo dejamos vacío.

@@ -12,6 +12,7 @@ export class DatabaseManager {
     private doc: GoogleSpreadsheet;
 
     constructor(spreadsheetId: string, clientEmail: string, privateKey: string) {
+        // Configuramos la autenticación de Google
         const serviceAccountAuth = new JWT({
             email: clientEmail,
             key: privateKey.replace(/\\n/g, '\n'),
@@ -32,100 +33,135 @@ export class DatabaseManager {
         }
     }
 
-    // Función auxiliar para arreglar los números con comas y signos $ del Excel
-    private parsearDinero(valor: string | number | undefined): number {
-        if (!valor) return 0;
-        if (typeof valor === 'number') return valor;
+    // Función auxiliar: Ahora REDONDEA y elimina los centavos
+    private parsearDinero(valor: any): number {
+        if (valor === undefined || valor === null || valor === '') return 0;
+        if (typeof valor === 'number') return Math.round(valor); // 👈 Redondeamos directo
         
-        // Convertimos a string, sacamos signos $, espacios, y cambiamos comas por puntos
-        let limpio = valor.toString().replace('$', '').replace(/\s/g, '').replace(',', '.');
-        const numero = parseFloat(limpio);
-        return isNaN(numero) ? 0 : numero;
+        let strVal = valor.toString().replace('$', '').replace(/\s/g, '');
+        
+        if (strVal.includes(',')) {
+            strVal = strVal.replace(/\./g, '');
+            strVal = strVal.replace(',', '.');
+        } else if (strVal.split('.').length > 2) {
+            strVal = strVal.replace(/\./g, '');
+        }
+        
+        const numero = parseFloat(strVal);
+        // 👈 Le aplicamos Math.round() para eliminar los decimales problemáticos
+        return isNaN(numero) ? 0 : Math.round(numero); 
     }
 
     // Función auxiliar para poner Nombres Propios (ej: "PEREZ, JUAN" -> "Juan Perez")
     private formatearNombre(nombreCrudo: string): string {
         if (!nombreCrudo) return 'Socio';
-        
-        // Si viene "APELLIDO, NOMBRE" de Refi
         let partes = nombreCrudo.includes(',') ? nombreCrudo.split(',') : nombreCrudo.split(' ');
-        
-        // Invertimos si vino con coma (para que quede Nombre Apellido) y capitalizamos
-        if (nombreCrudo.includes(',')) {
-            partes = [partes[1], partes[0]]; 
-        }
-
-        return partes
-            .map(p => p.trim())
-            .filter(p => p.length > 0)
-            .map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase())
-            .join(' ');
+        if (nombreCrudo.includes(',')) partes = [partes[1], partes[0]]; 
+        return partes.map(p => p.trim()).filter(p => p.length > 0).map(p => p.charAt(0).toUpperCase() + p.slice(1).toLowerCase()).join(' ');
     }
 
     public async buscarSocioTotal(dniABuscar: string): Promise<InfoSocio | null> {
         const dniStr = dniABuscar.trim();
-        let socioEncontrado: InfoSocio | null = null;
+        
+        let nombreSocio = '';
+        let deudaTotal = 0;
+        let esMoroso = false;
+        let esActivo = false;
+        let procesadoEnRefi = false; 
 
-        // 1. Buscar en CASHFLOW primero (Cuenta principal)
-        const hojaCashflow = this.doc.sheetsByTitle['CASHFLOW'];
-        if (hojaCashflow) {
-            await hojaCashflow.loadHeaderRow(2); 
-            const filas = await hojaCashflow.getRows();
-            
-            const encontrada = filas.find(f => {
-                const cuil = f.get('CUIL')?.toString() || '';
-                return cuil.includes(dniStr);
-            });
+        // 📝 DICCIONARIOS DE REGLAS DE NEGOCIO
+        const ESTADOS_IGNORAR_O_CANCELADO = [
+            'ANSES', 'FALLECIDO', 'CANCELADO', 'REFINANCIACION CANCELADO'
+        ];
+        
+        const ESTADOS_MORA = [
+            'SOTANO', 'REFINANCIACION V', 'REFINANCIACION', 'MOROSO', 
+            'INCOBRABLE', 'ANALISIS MOV', 'SOTEIN', 
+            'CONFINCRED', 'CONHER', 'DIAGRAMAS', 'MAGALI', 'MAYCOOP', 'TIZIANO'
+        ];
 
-            if (encontrada) {
-                const apellido = encontrada.get('APELLIDO') || '';
-                const nombre = encontrada.get('NOMBRE') || '';
-                const nombreCompleto = this.formatearNombre(`${nombre} ${apellido}`);
-                
-                // Usamos la columna DEUDA si existe, sino MONTO
-                let deudaCashflow = this.parsearDinero(encontrada.get('DEUDA'));
-                if (deudaCashflow === 0) deudaCashflow = this.parsearDinero(encontrada.get('MONTO'));
-
-                socioEncontrado = {
-                    nombre: nombreCompleto,
-                    dni: dniStr,
-                    deuda: deudaCashflow,
-                    hoja: 'CASHFLOW'
-                };
-            }
-        }
-
-        // 2. Buscar en REFINANCIACION
+        // 1. REVISAR REFINANCIACION
         const hojaRefi = this.doc.sheetsByTitle['REFINANCIACION'];
         if (hojaRefi) {
             await hojaRefi.loadHeaderRow(3); 
             const filas = await hojaRefi.getRows();
-            
-            const encontrada = filas.find(f => {
-                const cuil = f.get('CUIL')?.toString() || '';
-                return cuil.includes(dniStr);
-            });
+            const filasSocio = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
 
-            if (encontrada) {
-                const nombreCompleto = this.formatearNombre(encontrada.get('APELLIDO Y NOMBRE') || '');
-                const deudaRefi = this.parsearDinero(encontrada.get('MONTO ACTUALIZADO'));
+            for (const f of filasSocio) {
+                // Guardamos el nombre "por si acaso" no está en Cashflow
+                if (!nombreSocio) nombreSocio = this.formatearNombre((f.get('APELLIDO Y NOMBRE') || '').toString());
+                
+                const estado = (f.get('ESTADO') || '').toString().toUpperCase().trim();
+                
+                // 👈 CAMBIO ACÁ: Tomamos directamente la columna MONTO ACTUALIZADO
+                const rawDeuda = f.get('MONTO ACTUALIZADO'); 
+                let deuda = this.parsearDinero(rawDeuda);
+                
+                if (deuda < 0) deuda = 0;
 
-                if (socioEncontrado) {
-                    // Si ya estaba en Cashflow, le SUMAMOS la deuda de Refi y cambiamos el estado
-                    socioEncontrado.deuda += deudaRefi;
-                    socioEncontrado.hoja = 'AMBAS'; // Marcamos que tiene problemas en ambas
-                } else {
-                    // Si solo estaba en Refi
-                    socioEncontrado = {
-                        nombre: nombreCompleto,
-                        dni: dniStr,
-                        deuda: deudaRefi,
-                        hoja: 'REFINANCIACION'
-                    };
+                if (deuda > 0 && !ESTADOS_IGNORAR_O_CANCELADO.includes(estado)) {
+                    esMoroso = true;
+                    procesadoEnRefi = true;
+                    deudaTotal += deuda;
                 }
             }
         }
 
-        return socioEncontrado;
+        // 2. REVISAR CASHFLOW
+        const hojaCashflow = this.doc.sheetsByTitle['CASHFLOW'];
+        if (hojaCashflow) {
+            await hojaCashflow.loadHeaderRow(2); 
+            const filas = await hojaCashflow.getRows();
+            const filasSocio = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
+
+            for (const f of filasSocio) {
+                // 👈 CAMBIO ACÁ: Si lo encontramos en Cashflow, pisamos el nombre porque viene más prolijo
+                const apellido = f.get('APELLIDO') || '';
+                const nombre = f.get('NOMBRE') || '';
+                if (nombre || apellido) {
+                    nombreSocio = this.formatearNombre(`${nombre} ${apellido}`);
+                }
+
+                const estado = (f.get('ESTADO') || '').toString().toUpperCase().trim();
+                const rawDeuda = f.get('DEUDA');
+                
+                let deuda = this.parsearDinero(rawDeuda);
+
+                if (rawDeuda === undefined || rawDeuda === null || rawDeuda === '') {
+                    deuda = this.parsearDinero(f.get('MONTO'));
+                }
+                
+                if (deuda < 0) deuda = 0;
+
+                if (deuda > 0 && !ESTADOS_IGNORAR_O_CANCELADO.includes(estado)) {
+                    if (ESTADOS_MORA.includes(estado)) {
+                        if (!procesadoEnRefi) {
+                            esMoroso = true;
+                            deudaTotal += deuda;
+                        }
+                    } else {
+                        esActivo = true;
+                        deudaTotal += deuda;
+                    }
+                }
+            }
+        }
+
+        // 3. EMPAQUETADO FINAL
+        if (nombreSocio) {
+            let estadoFinal: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS' = 'CASHFLOW';
+            
+            if (esMoroso) estadoFinal = 'REFINANCIACION';
+            if (esMoroso && esActivo) estadoFinal = 'AMBAS';
+
+            return {
+                nombre: nombreSocio,
+                dni: dniStr,
+                deuda: deudaTotal, 
+                hoja: estadoFinal
+            };
+        }
+
+        return null;
     }
 }
