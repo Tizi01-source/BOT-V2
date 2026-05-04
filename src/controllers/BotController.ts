@@ -26,9 +26,9 @@ export class BotController {
         this.db = db;
     }
 
-    // La función mágica que maneja el reloj
+    // La funcion magica que maneja el reloj.
     private reiniciarTemporizador(numero: string, enviarMensaje: Function): void {
-        // Si el usuario ya tenía un reloj corriendo, lo destruimos
+        // Si el usuario ya tenía un reloj corriendo, lo destruimos.
         if (this.temporizadores.has(numero)) {
             clearTimeout(this.temporizadores.get(numero));
         }
@@ -41,7 +41,7 @@ export class BotController {
                 "⏳ Tu sesión expiró por inactividad. Si necesitás hacer otra consulta, escribí *'Hola'* para volver a empezar.");
         }, 600000); 
 
-        // Guardamos el reloj en nuestra memoria RAM
+        // Guardamos el reloj en nuestra memoria RAM.
         this.temporizadores.set(numero, nuevoReloj);
     }
 
@@ -101,7 +101,7 @@ export class BotController {
 
             case PasoBot.HABLANDO_CON_HUMANO:
 
-                // No hacemos nada, el bot ignora hasta que escriban 'volver'
+                // No hacemos nada, el bot ignora hasta que escriban volver.
 
                 break;
             default:
@@ -111,7 +111,7 @@ export class BotController {
         }
     }
 
-    // Permite que otra clase (como WhatsApp) mate la sesión de un usuario
+    // Permite que otra clase como WhatsApp mate la sesion de un usuario.
     public forzarCierreSesion(numero: string): void {
         this.sesionesActivas.delete(numero);
         this.deudaTemporal.delete(numero);
@@ -152,7 +152,7 @@ export class BotController {
 
         const socio = await this.db.buscarSocioTotal(dni);
 
-        // 1. SI NO EXISTE EN EL EXCEL (Socio totalmente nuevo)
+        // SI NO EXISTE EN EL EXCEL (Socio totalmente nuevo).
         if (!socio) {
             await enviarMensaje(MENUS.SOCIO_NO_ENCONTRADO);
             this.sesionesActivas.set(numero, PasoBot.MENU_NUEVO);
@@ -160,9 +160,9 @@ export class BotController {
             return;
         }
 
-        // 2. SI EXISTE, PERO NO DEBE NADA (Canceló todo o tiene saldo a favor)
+        // SI EXISTE, PERO NO DEBE NADA (Cancelo todo o tiene saldo a favor).
         if (socio.deuda <= 0) {
-            // Un mensaje especial para los que no tienen crédito activo
+            // Un mensaje especial para los que no tienen credito activo.
             const msjSinDeuda = `¡Hola ${socio.nombre}! 👋 Vemos que actualmente **no registrás ningún crédito activo** ni deuda pendiente en nuestro sistema.\n\n` +
                                 `Si querés aprovechar y sacar un nuevo préstamo, te dejo estas opciones:\n\n` +
                                 `1️⃣ Solicitar nuevo crédito\n` +
@@ -172,44 +172,43 @@ export class BotController {
             
             await enviarMensaje(msjSinDeuda);
             
-            // Lo mandamos al mismo sub-menú que los nuevos (que tiene las opciones de pedir crédito)
+            // Lo mandamos al mismo sub menu que los nuevos (que tiene las opciones de pedir credito).
             this.sesionesActivas.set(numero, PasoBot.MENU_NUEVO); 
-            await asignarEtiqueta("SOCIO AL DIA"); // ¡Le ponemos una etiqueta linda!
+            await asignarEtiqueta("SOCIO AL DIA"); 
             return;
         }
 
-        // 3. SI EXISTE Y ESTÁ EN MORA / REFINANCIACIÓN
+        // SI EXISTE Y ESTA EN MORA / REFINANCIACION
         if (socio.hoja === 'REFINANCIACION' || socio.hoja === 'AMBAS') {
-            this.deudaTemporal.set(numero, socio.deuda); // Guardamos la deuda para el simulador
+            this.deudaTemporal.set(numero, socio.deuda); // Guardamos la deuda para el simulador.
             await enviarMensaje(MENUS.generarMenuMora(socio.nombre, socio.deuda));
             this.sesionesActivas.set(numero, PasoBot.MENU_MORA);
             await asignarEtiqueta("SOCIO MORA");
 
-        // 4. SI EXISTE Y ESTÁ ACTIVO AL DÍA
+        // 4. SI EXISTE Y ESTA ACTIVO AL DIA.
         } else if (socio.hoja === 'CASHFLOW') {
-            await enviarMensaje(MENUS.generarMenuActivo(socio.nombre));
+            await enviarMensaje(MENUS.generarMenuActivo(socio));
             this.sesionesActivas.set(numero, PasoBot.MENU_ACTIVO);
             await asignarEtiqueta("SOCIO ACTIVO");
         }
     }
 
     // ==========================================
-    // 🛠️ MANEJADORES DE SUB-MENÚS
+    //  MANEJADORES DE SUB-MENUS
     // ==========================================
 
     private async manejadorMenuMora(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
         const opcion = texto.trim();
-        /* Menú Mora: 1. Opciones de pago | 2. Informar pago | 3. Cobranzas | 4. Salir */
+        /* Menu Mora: 1. Opciones de pago | 2. Informar pago | 3. Cobranzas | 4. Salir */
         
         if (opcion === '1') {
 
             const deuda = this.deudaTemporal.get(numero) || 0;
 
-            // Calculamos las cuotas (dividido directo, si llevan interés acá le podés sumar un %)
-            const c1 = deuda.toFixed(2);
-            const c3 = (deuda / 3).toFixed(2);
-            const c6 = (deuda / 6).toFixed(2);
-            const c12 = (deuda / 12).toFixed(2);
+            const c1 = deuda.toLocaleString('es-AR');
+            const c3 = Math.round(deuda / 3).toLocaleString('es-AR');
+            const c6 = Math.round(deuda / 6).toLocaleString('es-AR');
+            const c12 = Math.round(deuda / 12).toLocaleString('es-AR');
             
             const msjSimulador = `📊 *Simulador de Cuotas*\n\n` +
                 `Tu saldo a regularizar es de *$${deuda.toFixed(2)}*.\n\n` +
@@ -237,14 +236,13 @@ export class BotController {
         } else if (opcion === '4') {
 
             await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! Que tengas un excelente día. 👋\n\n_Escribí 'Hola' para volver a empezar._");
-            this.forzarCierreSesion(numero); // Terminamos la sesión
+            this.forzarCierreSesion(numero); // Terminamos la sesion.
 
         } else {
             await enviarMensaje(MENUS.OPCION_INVALIDA);
         }
     }
 
-    // 👈 NUEVA FUNCIÓN PARA ATAJAR LA ELECCIÓN DE LA CUOTA
     private async manejadorSimuladorCuotas(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
         const opcion = texto.trim();
 
@@ -256,7 +254,7 @@ export class BotController {
 
             await enviarMensaje(`✅ Perfecto. Has seleccionado el plan de *${cuotasElegidas} cuota(s)*.\n\nPara avanzar, por favor realizá el pago correspondiente y *envianos la foto o PDF del comprobante* por este chat.\n\nUn asesor revisará tu pago a la brevedad para impactarlo en el sistema. 👨‍💻`);
             
-            // Lo derivamos a humano para que quede el chat abierto esperando la foto
+            // Lo derivamos a humano para que quede el chat abierto esperando la foto.
             this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
 
         } else if (opcion === '5') {
@@ -269,7 +267,7 @@ export class BotController {
 
     private async manejadorMenuActivo(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
         const opcion = texto.trim();
-        /* Menú Activo: 1. Estado de cuenta | 2. Solicitar renovación | 3. Modificar datos | 4. Asesor | 5. Salir */
+        /* Menu Activo: 1. Estado de cuenta | 2. Solicitar renovacion | 3. Modificar datos | 4. Asesor | 5. Salir */
 
         if (opcion === '1') {
             await enviarMensaje("Para consultar el detalle exacto de tus cuotas pagas y restantes, te voy a derivar con un asesor de cuentas.");
@@ -293,7 +291,7 @@ export class BotController {
 
     private async manejadorMenuNuevo(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
         const opcion = texto.trim();
-        /* Menú Nuevo/Cancelado: 1. Solicitar crédito | 2. Asesor | 3. Finalizar */
+        /* Menu Nuevo/Cancelado: 1. Solicitar credito | 2. Asesor | 3. Finalizar */
 
         if (opcion === '1') {
             await enviarMensaje("¡Excelente decisión! 🎉 Para iniciar la solicitud de tu nuevo crédito, te comunicaré con el área comercial.");

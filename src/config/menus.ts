@@ -1,3 +1,7 @@
+import { InfoSocio } from '../services/Database';
+
+
+
 export const MENUS = {
     SALUDO_PRINCIPAL: 
     `¡Hola! Bienvenido al asistente virtual de *MAYCOOP* 🏢\n\n Por favor, elegí una opción escribiendo el número:\n\n 1️⃣ Soy Socio y quiero consultar mi deuda\n 2️⃣ Quiero información sobre préstamos\n 3️⃣ Hablar con un asesor`,
@@ -24,10 +28,61 @@ export const MENUS = {
     `Actualmente no registramos créditos a tu nombre o tu DNI no figura en la base.\n\n¿En qué podemos ayudarte?\n\n 1️⃣ Solicitar un crédito\n 2️⃣ Hablar con un asesor\n 3️⃣ Finalizar consulta`,
     
     generarMenuMora: (nombre: string, deuda: number) => {
-        return `👤 *Hola ${nombre}*\n\nRegistramos un saldo pendiente o refinanciado de *$${deuda}*.\n\nSeleccioná una opción:\n\n 1️⃣ Ver opciones de pago\n 2️⃣ Informar un pago realizado\n 3️⃣ Hablar con cobranzas\n 4️⃣ Salir`;
+        // 👈 ACÁ LE PONEMOS EL MAQUILLAJE ARGENTINO
+        const deudaFormateada = deuda.toLocaleString('es-AR'); 
+        
+        return `👤 *Hola ${nombre}*\n\n` +
+               `Registramos un saldo pendiente o refinanciado de *$${deudaFormateada}* en tu cuenta.\n\n` +
+               `Seleccioná una opción para regularizar tu situación:\n\n` +
+               ` 1️⃣ Ver opciones de pago y cuotas\n` +
+               ` 2️⃣ Informar un pago ya realizado\n` +
+               ` 3️⃣ Hablar con un asesor de cobranzas\n` +
+               ` 4️⃣ Salir`;
     },
-    
-    generarMenuActivo: (nombre: string) => {
-        return `👤 *Hola ${nombre}*\n\nTu crédito se encuentra vigente.\n\n¿Qué gestión deseás realizar?\n\n 1️⃣ Consultar estado de cuenta\n 2️⃣ Solicitar renovación o nuevo monto\n 3️⃣ Modificar mis datos de contacto\n 4️⃣ Hablar con un asesor\n 5️⃣ Salir`;
-    }
+
+    generarMenuActivo: (socio: InfoSocio) => { 
+        
+        let mensaje = `👤 *Hola ${socio.nombre}*\n\n` +
+                      `¡Gracias por cumplir con tus pagos al día! 🥳\n\n` +
+                      `📊 *Resumen de tu Crédito Activo:*\n`;
+
+        // Si por algún motivo mágico no trajo los datos, mostramos algo genérico
+        if (!socio.creditoActivo) {
+            mensaje += `🔹 Saldo total: $${socio.deuda.toLocaleString('es-AR')}\n\n`;
+        } else {
+            const c = socio.creditoActivo;
+            // Damos formato a las fechas de Excel si vienen raras (opcional)
+            let fechaCorta = c.fecha.split('T')[0] || c.fecha; 
+
+            mensaje += `🔹 *Crédito Nro:* ${c.nroCredito}\n` +
+                       `🔹 *Fecha:* ${fechaCorta}\n` +
+                       `🔹 *Monto Otorgado:* $${c.montoSacado.toLocaleString('es-AR')}\n` +
+                       `🔹 *Plan:* ${c.plazo} cuotas\n` +
+                       `🔹 *Cuotas Pagas:* ${c.cuotasPagas}\n` +
+                       `🔹 *Valor de Cuota:* $${c.montoCuota.toLocaleString('es-AR')}\n\n`;
+
+            // 🧠 LA LÓGICA DE UPGRADE (Docentes y IPS)
+            const org = c.organismo.toUpperCase();
+            const esDocenteOIPS = org.includes('CULTURA Y EDUCACION') || org.includes('PREVISION SOCIAL');
+            const metodoActual = c.metodo.toUpperCase();
+
+            if (esDocenteOIPS) {
+                if (metodoActual === 'CBU') {
+                    mensaje += `💡 *¡Tenés opciones disponibles!*\n` +
+                               `Como pertenecés a IPS/Docentes y pagás por CBU, tenés pre-aprobado gestionar un nuevo crédito descontándolo directamente por **Recibo de Haberes**.\n\n`;
+                } else {
+                    mensaje += `💡 *¡Renovación disponible!*\n` +
+                               `Como ya descontás por Haberes, podés gestionar un préstamo paralelo cobrado mediante **CBU**.\n\n`;
+                }
+            }
+        }
+
+        mensaje += `¿En qué te podemos ayudar hoy?\n\n` +
+                   ` 1️⃣ Solicitar nuevo crédito / Renovación\n` +
+                   ` 2️⃣ Modificar mis datos personales\n` +
+                   ` 3️⃣ Hablar con un asesor\n` +
+                   ` 4️⃣ Salir`;
+
+        return mensaje;
+    },
 };

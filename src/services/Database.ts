@@ -6,13 +6,23 @@ export interface InfoSocio {
     dni: string;
     deuda: number;
     hoja: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS';
+    creditoActivo?: {
+        fecha: string;
+        metodo: string;
+        organismo: string;
+        nroCredito: string;
+        montoSacado: number;
+        plazo: string;
+        cuotasPagas: string;
+        montoCuota: number;
+    }
 }
 
 export class DatabaseManager {
     private doc: GoogleSpreadsheet;
 
     constructor(spreadsheetId: string, clientEmail: string, privateKey: string) {
-        // Configuramos la autenticación de Google
+        // Configuramos la autenticacion de Google.
         const serviceAccountAuth = new JWT({
             email: clientEmail,
             key: privateKey.replace(/\\n/g, '\n'),
@@ -33,26 +43,38 @@ export class DatabaseManager {
         }
     }
 
-    // Función auxiliar: Ahora REDONDEA y elimina los centavos
+    // Lee cualquier formato y redondea. Si no se puede parsear, devuelve 0.
     private parsearDinero(valor: any): number {
         if (valor === undefined || valor === null || valor === '') return 0;
-        if (typeof valor === 'number') return Math.round(valor); // 👈 Redondeamos directo
+        if (typeof valor === 'number') return Math.round(valor);
         
         let strVal = valor.toString().replace('$', '').replace(/\s/g, '');
         
-        if (strVal.includes(',')) {
-            strVal = strVal.replace(/\./g, '');
+        // Verificamos si tiene ambos separadores (punto y coma).
+        if (strVal.includes(',') && strVal.includes('.')) {
+            // Si la coma esta despues del punto.
+            if (strVal.indexOf(',') > strVal.indexOf('.')) {
+                strVal = strVal.replace(/\./g, '').replace(',', '.');
+            } 
+            // Si el punto esta despues de la coma.
+            else {
+                strVal = strVal.replace(/,/g, '');
+            }
+        } 
+        // Si solo tiene coma, asumimos decimales.
+        else if (strVal.includes(',')) {
             strVal = strVal.replace(',', '.');
-        } else if (strVal.split('.').length > 2) {
+        } 
+        // Si solo tiene muchos puntos.
+        else if (strVal.split('.').length > 2) {
             strVal = strVal.replace(/\./g, '');
         }
-        
+
         const numero = parseFloat(strVal);
-        // 👈 Le aplicamos Math.round() para eliminar los decimales problemáticos
         return isNaN(numero) ? 0 : Math.round(numero); 
     }
 
-    // Función auxiliar para poner Nombres Propios (ej: "PEREZ, JUAN" -> "Juan Perez")
+    // Funcion auxiliar para poner Nombres Propios.
     private formatearNombre(nombreCrudo: string): string {
         if (!nombreCrudo) return 'Socio';
         let partes = nombreCrudo.includes(',') ? nombreCrudo.split(',') : nombreCrudo.split(' ');
@@ -68,12 +90,11 @@ export class DatabaseManager {
         let esMoroso = false;
         let esActivo = false;
         let procesadoEnRefi = false; 
+        let datosCreditoActivo: InfoSocio['creditoActivo'] = undefined; // 👈 Guardamos los datos acá
 
-        // 📝 DICCIONARIOS DE REGLAS DE NEGOCIO
         const ESTADOS_IGNORAR_O_CANCELADO = [
             'ANSES', 'FALLECIDO', 'CANCELADO', 'REFINANCIACION CANCELADO'
         ];
-        
         const ESTADOS_MORA = [
             'SOTANO', 'REFINANCIACION V', 'REFINANCIACION', 'MOROSO', 
             'INCOBRABLE', 'ANALISIS MOV', 'SOTEIN', 
@@ -88,12 +109,9 @@ export class DatabaseManager {
             const filasSocio = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
 
             for (const f of filasSocio) {
-                // Guardamos el nombre "por si acaso" no está en Cashflow
                 if (!nombreSocio) nombreSocio = this.formatearNombre((f.get('APELLIDO Y NOMBRE') || '').toString());
                 
                 const estado = (f.get('ESTADO') || '').toString().toUpperCase().trim();
-                
-                // 👈 CAMBIO ACÁ: Tomamos directamente la columna MONTO ACTUALIZADO
                 const rawDeuda = f.get('MONTO ACTUALIZADO'); 
                 let deuda = this.parsearDinero(rawDeuda);
                 
@@ -115,7 +133,6 @@ export class DatabaseManager {
             const filasSocio = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
 
             for (const f of filasSocio) {
-                // 👈 CAMBIO ACÁ: Si lo encontramos en Cashflow, pisamos el nombre porque viene más prolijo
                 const apellido = f.get('APELLIDO') || '';
                 const nombre = f.get('NOMBRE') || '';
                 if (nombre || apellido) {
@@ -124,7 +141,6 @@ export class DatabaseManager {
 
                 const estado = (f.get('ESTADO') || '').toString().toUpperCase().trim();
                 const rawDeuda = f.get('DEUDA');
-                
                 let deuda = this.parsearDinero(rawDeuda);
 
                 if (rawDeuda === undefined || rawDeuda === null || rawDeuda === '') {
@@ -140,8 +156,21 @@ export class DatabaseManager {
                             deudaTotal += deuda;
                         }
                     } else {
+                        // 👈 ¡ACÁ EXTRAEMOS LOS DATOS DEL CRÉDITO ACTIVO!
                         esActivo = true;
                         deudaTotal += deuda;
+                        
+                        // Guardamos los datos del ÚLTIMO crédito activo que encuentre (por si tiene varios)
+                        datosCreditoActivo = {
+                            fecha: (f.get('FECHA') || '').toString(),
+                            metodo: (f.get('METODO') || '').toString().trim(),
+                            organismo: (f.get('ORGANISMO') || '').toString().trim(),
+                            nroCredito: (f.get('NRO CREDITO') || '').toString(),
+                            montoSacado: this.parsearDinero(f.get('MONTO')),
+                            plazo: (f.get('PLAZO') || '').toString(),
+                            cuotasPagas: (f.get('CTAS. PAGAS') || '0').toString(),
+                            montoCuota: this.parsearDinero(f.get('MONTO_CTA'))
+                        };
                     }
                 }
             }
@@ -158,7 +187,8 @@ export class DatabaseManager {
                 nombre: nombreSocio,
                 dni: dniStr,
                 deuda: deudaTotal, 
-                hoja: estadoFinal
+                hoja: estadoFinal,
+                creditoActivo: datosCreditoActivo // 👈 Se lo pasamos al controlador
             };
         }
 
