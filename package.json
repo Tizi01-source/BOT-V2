@@ -19,6 +19,7 @@
     "@wppconnect-team/wppconnect": "^2.0.0",
     "dotenv": "^17.4.2",
     "google-auth-library": "^10.6.2",
-    "google-spreadsheet": "^5.2.0"
+    "google-spreadsheet": "^5.2.0",
+    "mongoose": "^9.6.1"
   }
 }

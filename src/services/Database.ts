@@ -195,3 +195,76 @@ export class DatabaseManager {
         return null;
     }
 }
+
+
+
+/* =======================================================================
+    PREPARACION PARA MONGODB (NO-SQL)
+   =======================================================================
+   Instrucciones para el futuro:e
+    Importar mongoose
+    Cambiar la inicialización en app.ts
+   ======================================================================= */
+
+/*
+
+const socioSchema = new mongoose.Schema({
+    nombre: String,
+    dni: String,
+    deuda: Number,
+    hoja: String, // 'CASHFLOW', 'REFINANCIACION', 'AMBAS'
+    creditoActivo: {
+        fecha: String,
+        metodo: String,
+        organismo: String,
+        nroCredito: String,
+        montoSacado: Number,
+        plazo: String,
+        cuotasPagas: String,
+        montoCuota: Number
+    }
+});
+
+const SocioModel = mongoose.model('Socio', socioSchema);
+
+export class DatabaseManagerMongo {
+    
+    // Ya no necesitamos spreadsheetId.
+    constructor() {}
+
+    public async conectar(): Promise<void> {
+        try {
+            console.log('⏳ Conectando a MongoDB...');
+            
+            // ACA VA EL LINK DE CONEXION
+            const URI_MONGODB = "CLAVE_DE_CONEXION";
+            
+            await mongoose.connect(URI_MONGODB);
+            console.log('✅ Base de datos MongoDB conectada exitosamente.');
+        } catch (error) {
+            console.error('❌ Error al conectar a MongoDB:', error);
+            throw error;
+        }
+    }
+
+    public async buscarSocioTotal(dniABuscar: string): Promise<InfoSocio | null> {
+        const dniStr = dniABuscar.trim();
+
+        const socioEncontrado = await SocioModel.findOne({ dni: dniStr });
+
+        if (socioEncontrado) {
+            // Si lo encontró, lo devolvemos formateado.
+            return {
+                nombre: socioEncontrado.nombre,
+                dni: socioEncontrado.dni,
+                deuda: socioEncontrado.deuda,
+                hoja: socioEncontrado.hoja as any,
+                creditoActivo: socioEncontrado.creditoActivo
+            };
+        }
+
+        // Si la base de datos devuelve vacío, es un Socio Nuevo
+        return null;
+    }
+}
+*/
