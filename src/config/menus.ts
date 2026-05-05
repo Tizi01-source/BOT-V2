@@ -1,7 +1,5 @@
 import { InfoSocio } from '../services/Database';
 
-
-
 export const MENUS = {
     SALUDO_PRINCIPAL: 
     `¡Hola! Bienvenido al asistente virtual de *MAYCOOP* 🏢\n\n Por favor, elegí una opción escribiendo el número:\n\n 1️⃣ Soy Socio y quiero consultar mi deuda\n 2️⃣ Quiero información sobre préstamos\n 3️⃣ Hablar con un asesor`,
@@ -28,7 +26,6 @@ export const MENUS = {
     `Actualmente no registramos créditos a tu nombre o tu DNI no figura en la base.\n\n¿En qué podemos ayudarte?\n\n 1️⃣ Solicitar un crédito\n 2️⃣ Hablar con un asesor\n 3️⃣ Finalizar consulta`,
     
     generarMenuMora: (nombre: string, deuda: number) => {
-        // 👈 ACÁ LE PONEMOS EL MAQUILLAJE ARGENTINO
         const deudaFormateada = deuda.toLocaleString('es-AR'); 
         
         return `👤 *Hola ${nombre}*\n\n` +
@@ -46,12 +43,12 @@ export const MENUS = {
                       `¡Gracias por cumplir con tus pagos al día! 🥳\n\n` +
                       `📊 *Resumen de tu Crédito Activo:*\n`;
 
-        // Si por algún motivo mágico no trajo los datos, mostramos algo genérico
+        // Si por algun motivo no trajo los datos, muestra algo generico.
         if (!socio.creditoActivo) {
             mensaje += `🔹 Saldo total: $${socio.deuda.toLocaleString('es-AR')}\n\n`;
         } else {
             const c = socio.creditoActivo;
-            // Damos formato a las fechas de Excel si vienen raras (opcional)
+            // Damos formato a las fechas de Excel.
             let fechaCorta = c.fecha.split('T')[0] || c.fecha; 
 
             mensaje += `🔹 *Crédito Nro:* ${c.nroCredito}\n` +
@@ -61,7 +58,7 @@ export const MENUS = {
                        `🔹 *Cuotas Pagas:* ${c.cuotasPagas}\n` +
                        `🔹 *Valor de Cuota:* $${c.montoCuota.toLocaleString('es-AR')}\n\n`;
 
-            // 🧠 LA LÓGICA DE UPGRADE (Docentes y IPS)
+            // LOGICA DE MENSAJE PERSONALIZADO SEGUN ORGANISMO Y METODO DE PAGO.
             const org = c.organismo.toUpperCase();
             const esDocenteOIPS = org.includes('CULTURA Y EDUCACION') || org.includes('PREVISION SOCIAL');
             const metodoActual = c.metodo.toUpperCase();

@@ -22,7 +22,7 @@ export class DatabaseManager {
     private doc: GoogleSpreadsheet;
 
     constructor(spreadsheetId: string, clientEmail: string, privateKey: string) {
-        // Configuramos la autenticacion de Google.
+        // Configuracion la autenticacion de Google.
         const serviceAccountAuth = new JWT({
             email: clientEmail,
             key: privateKey.replace(/\\n/g, '\n'),
@@ -34,11 +34,11 @@ export class DatabaseManager {
 
     public async conectar(): Promise<void> {
         try {
-            console.log('⏳ Conectando a la base de datos (Google Sheets)...');
+            console.log('Conectando a la base de datos...');
             await this.doc.loadInfo();
-            console.log(`✅ Base de datos conectada. Documento: ${this.doc.title}`);
+            console.log(`Base de datos conectada. Documento: ${this.doc.title}`);
         } catch (error) {
-            console.error('❌ Error al conectar con Google Sheets:', error);
+            console.error('Error al conectar con Google Sheets:', error);
             throw error;
         }
     }
@@ -50,7 +50,7 @@ export class DatabaseManager {
         
         let strVal = valor.toString().replace('$', '').replace(/\s/g, '');
         
-        // Verificamos si tiene ambos separadores (punto y coma).
+        // Verifica si tiene ambos separadores (punto y coma).
         if (strVal.includes(',') && strVal.includes('.')) {
             // Si la coma esta despues del punto.
             if (strVal.indexOf(',') > strVal.indexOf('.')) {
@@ -65,7 +65,7 @@ export class DatabaseManager {
         else if (strVal.includes(',')) {
             strVal = strVal.replace(',', '.');
         } 
-        // Si solo tiene muchos puntos.
+        // Si solo tiene puntos.
         else if (strVal.split('.').length > 2) {
             strVal = strVal.replace(/\./g, '');
         }
@@ -74,7 +74,7 @@ export class DatabaseManager {
         return isNaN(numero) ? 0 : Math.round(numero); 
     }
 
-    // Funcion auxiliar para poner Nombres Propios.
+    // Funcion auxiliar para formatear nombres.
     private formatearNombre(nombreCrudo: string): string {
         if (!nombreCrudo) return 'Socio';
         let partes = nombreCrudo.includes(',') ? nombreCrudo.split(',') : nombreCrudo.split(' ');
@@ -90,7 +90,7 @@ export class DatabaseManager {
         let esMoroso = false;
         let esActivo = false;
         let procesadoEnRefi = false; 
-        let datosCreditoActivo: InfoSocio['creditoActivo'] = undefined; // 👈 Guardamos los datos acá
+        let datosCreditoActivo: InfoSocio['creditoActivo'] = undefined;
 
         const ESTADOS_IGNORAR_O_CANCELADO = [
             'ANSES', 'FALLECIDO', 'CANCELADO', 'REFINANCIACION CANCELADO'
@@ -101,7 +101,7 @@ export class DatabaseManager {
             'CONFINCRED', 'CONHER', 'DIAGRAMAS', 'MAGALI', 'MAYCOOP', 'TIZIANO'
         ];
 
-        // 1. REVISAR REFINANCIACION
+        // REVISA HOJA REFINANCIACION
         const hojaRefi = this.doc.sheetsByTitle['REFINANCIACION'];
         if (hojaRefi) {
             await hojaRefi.loadHeaderRow(3); 
@@ -125,7 +125,7 @@ export class DatabaseManager {
             }
         }
 
-        // 2. REVISAR CASHFLOW
+        // REVISA HOJA CASHFLOW
         const hojaCashflow = this.doc.sheetsByTitle['CASHFLOW'];
         if (hojaCashflow) {
             await hojaCashflow.loadHeaderRow(2); 
@@ -156,11 +156,10 @@ export class DatabaseManager {
                             deudaTotal += deuda;
                         }
                     } else {
-                        // 👈 ¡ACÁ EXTRAEMOS LOS DATOS DEL CRÉDITO ACTIVO!
                         esActivo = true;
                         deudaTotal += deuda;
                         
-                        // Guardamos los datos del ÚLTIMO crédito activo que encuentre (por si tiene varios)
+                        // Guarda los datos del ultimo credito activo que encuentre.
                         datosCreditoActivo = {
                             fecha: (f.get('FECHA') || '').toString(),
                             metodo: (f.get('METODO') || '').toString().trim(),
@@ -176,7 +175,7 @@ export class DatabaseManager {
             }
         }
 
-        // 3. EMPAQUETADO FINAL
+        // EMPAQUETADO FINAL
         if (nombreSocio) {
             let estadoFinal: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS' = 'CASHFLOW';
             
@@ -188,7 +187,7 @@ export class DatabaseManager {
                 dni: dniStr,
                 deuda: deudaTotal, 
                 hoja: estadoFinal,
-                creditoActivo: datosCreditoActivo // 👈 Se lo pasamos al controlador
+                creditoActivo: datosCreditoActivo 
             };
         }
 

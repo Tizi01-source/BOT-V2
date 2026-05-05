@@ -7,13 +7,13 @@ export class WhatsAppClient {
 
     private chatsSilenciados: Map<string, NodeJS.Timeout>;
 
-    // Cuando creamos el WhatsappClient, pasamos el cerebro.
+    // Cuando crea el WhatsappClient, se pasa el cerebro.
     constructor(controlador: BotController) {
         this.controlador = controlador;
         this.chatsSilenciados = new Map();
     }
 
-    // Iniciamos la conexion con wppconnect.
+    // Inicia la conexion con wppconnect.
     public async iniciar(): Promise<void> {
         try {
             console.log('📱 Iniciando cliente de WhatsApp...');
@@ -42,11 +42,11 @@ export class WhatsAppClient {
                 }
             });
             
-            console.log('✅ WhatsApp conectado y listo para recibir mensajes.');
+            console.log('WhatsApp conectado y listo para recibir mensajes.');
             this.escucharMensajes();
 
         } catch (error) {
-            console.error('❌ Error crítico al iniciar WhatsApp:', error);
+            console.error('Error critico al iniciar WhatsApp:', error);
             throw error;
         }
     }
@@ -58,7 +58,7 @@ export class WhatsAppClient {
             clearTimeout(this.chatsSilenciados.get(telefono)!);
         }
 
-        // Lo silenciamos por 30 minutos (1800000 milisegundos).
+        // Lo silencia por 30 minutos (1800000 milisegundos).
         console.log(`👤 MODO HUMANO: Bot silenciado por 30 min. en el chat ${telefono}`);
         const relojModoHumano = setTimeout(() => {
             this.chatsSilenciados.delete(telefono);
@@ -73,23 +73,23 @@ export class WhatsAppClient {
         if (!this.client) return;
 
         try {
-            // Traemos todas las etiquetas.
+            // Trae todas las etiquetas.
             let etiquetas = await this.client.getAllLabels();
             
-            // Buscamos si ya existe.
+            // Busca si ya existe.
             let etiquetaExistente = etiquetas.find(e => e.name.toUpperCase() === nombreEtiqueta.toUpperCase());
             
             let idEtiquetaFinal: string | undefined;
 
             if (etiquetaExistente && etiquetaExistente.id) {
-                // Si existe, guardamos su ID.
+                // Si existe, guarda su ID.
                 idEtiquetaFinal = etiquetaExistente.id;
             } else {
-                // Si no existe, la creamos.
+                // Si no existe, la crea.
                 console.log(`🏷️ Creando nueva etiqueta en WhatsApp: ${nombreEtiqueta}`);
                 await this.client.addNewLabel(nombreEtiqueta); 
                 
-                // Volvemos a pedir la lista de etiquetas actualizada para obtener el ID de la nueva.
+                // Vuelve a pedir la lista de etiquetas actualizada para obtener el ID de la nueva.
                 etiquetas = await this.client.getAllLabels();
                 etiquetaExistente = etiquetas.find(e => e.name.toUpperCase() === nombreEtiqueta.toUpperCase());
                 
@@ -98,7 +98,7 @@ export class WhatsAppClient {
                 }
             }
             
-            // Asignamos la etiqueta.
+            // Asigna la etiqueta.
             if (idEtiquetaFinal) {
                 await this.client.addOrRemoveLabels(telefono, [{ labelId: idEtiquetaFinal, type: 'add' }]);
                 console.log(`✅ Etiqueta '${nombreEtiqueta}' agregada a ${telefono}`);
@@ -110,55 +110,55 @@ export class WhatsAppClient {
         }
     }
 
-    // Metodo privado que se queda escuchando todo el tiempo.
+    // Metodo privado que se quede escuchando.
     private escucharMensajes(): void {
         if (!this.client) return;
 
         this.client.onAnyMessage((message) => {
 
-            // Identificamos el número de chat (ya sea que me escriban, o que escriba yo).
+            // Identifica el numero de chat.
             const telefono = message.fromMe ? message.to : message.from;
             
-            // Ignorar mensajes de Grupos.
+            // Ignora mensajes de Grupos.
             if (message.isGroupMsg) return;
-            // Ignorar Estados / Historias.
+            // Ignora Estados.
             if (message.from === 'status@broadcast') return;
-            // Ignorar mensajes de sistema (cambios de foto, seguridad, etc).
+            // Ignora mensajes de sistema (cambios de foto, seguridad, etc).
             if (message.type === 'e2e_notification' || message.type === 'protocol' || message.type === 'revoked') return;
-            // Ignorar llamadas perdidas.
+            // Ignora llamadas perdidas.
             if (message.type === 'call_log') return;
-            // Ignorar Canales de Whatsapp.
+            // Ignora Canales de Whatsapp.
             if (telefono.includes('@newsletter')) return;
 
-            // Si es un string normal, lo tomamos. Si es un archivo/sticker/audio, por ahora lo dejamos vacio.
+            // Si es un string normal, lo toma. Si es un archivo/sticker/audio, por ahora lo deja vacio.
             let textoRecibido = typeof message.body === 'string' ? message.body.trim() : "";
 
             // Logica de Modo Humano (Interceptamos los mensajes de salida)
             if (message.fromMe) {
-                // Si el texto tiene el caracter invisible (\u200D), lo ignoramos.
+                // Si el texto tiene el caracter invisible (\u200D), lo ignora.
                 if (textoRecibido.includes('\u200D')) {
                     return; 
                 }
 
-                // Si no tiene el caracter invisible y escribiste algo o mandaste algo, activamos modo humano.
+                // Si no tiene el caracter invisible, activa modo humano.
                 this.activarModoHumano(telefono);
                 this.controlador.forzarCierreSesion(telefono); 
                 return;
             }
 
-            // Si el chat está en modo humano, ignoramos lo que nos respondan.
+            // Si el chat esta en modo humano, ignora los que respondan.
             if (this.chatsSilenciados.has(telefono)) {
                 return;
             }
 
-            // Si el mensaje es de un bot, de sistema, o si nos mandaron puro archivo sin texto, ignoramos.
+            // Si el mensaje es de un bot, de sistema, o si nos mandaron puro archivo sin texto, ignora.
             if (!textoRecibido || textoRecibido === "") {
                 return; 
             }
 
             console.log(`📩 Mensaje recibido de ${message.from}: ${message.body}`);
 
-            // Le pasamos el mensaje al cerebro.
+            // Le pasa el mensaje al cerebro.
             this.controlador.procesarMensaje(
                 telefono, 
                 textoRecibido, 

@@ -26,14 +26,14 @@ export class BotController {
         this.db = db;
     }
 
-    // La funcion magica que maneja el reloj.
+    // Funcion de temporizador.
     private reiniciarTemporizador(numero: string, enviarMensaje: Function): void {
-        // Si el usuario ya tenía un reloj corriendo, lo destruimos.
+        // Si el usuario ya tenia un reloj corriendo, lo limpia.
         if (this.temporizadores.has(numero)) {
             clearTimeout(this.temporizadores.get(numero));
         }
 
-        // Creamos un reloj nuevo. Si pasan 10 minutos (600000 ms) sin que se cancele, explota y ejecuta esto:
+        // Crea un reloj nuevo. Si pasan 10 minutos (600000 ms) sin que se cancele, explota y ejecuta:
         const nuevoReloj = setTimeout(async () => {
             this.sesionesActivas.delete(numero);
             this.temporizadores.delete(numero);
@@ -41,7 +41,7 @@ export class BotController {
                 "⏳ Tu sesión expiró por inactividad. Si necesitás hacer otra consulta, escribí *'Hola'* para volver a empezar.");
         }, 600000); 
 
-        // Guardamos el reloj en nuestra memoria RAM.
+        // Guardamos el reloj en la memoria.
         this.temporizadores.set(numero, nuevoReloj);
     }
 
@@ -101,7 +101,7 @@ export class BotController {
 
             case PasoBot.HABLANDO_CON_HUMANO:
 
-                // No hacemos nada, el bot ignora hasta que escriban volver.
+                // No hacemos nada, el bot ignora hasta que escriba volver.
 
                 break;
             default:
@@ -113,9 +113,12 @@ export class BotController {
 
     // Permite que otra clase como WhatsApp mate la sesion de un usuario.
     public forzarCierreSesion(numero: string): void {
+
         this.sesionesActivas.delete(numero);
         this.deudaTemporal.delete(numero);
+
         if (this.temporizadores.has(numero)) {
+
             clearTimeout(this.temporizadores.get(numero));
             this.temporizadores.delete(numero);
         }
@@ -152,7 +155,7 @@ export class BotController {
 
         const socio = await this.db.buscarSocioTotal(dni);
 
-        // SI NO EXISTE EN EL EXCEL (Socio totalmente nuevo).
+        // SI NO EXISTE EN EL EXCEL (Socio nuevo).
         if (!socio) {
             await enviarMensaje(MENUS.SOCIO_NO_ENCONTRADO);
             this.sesionesActivas.set(numero, PasoBot.MENU_NUEVO);
@@ -162,7 +165,6 @@ export class BotController {
 
         // SI EXISTE, PERO NO DEBE NADA (Cancelo todo o tiene saldo a favor).
         if (socio.deuda <= 0) {
-            // Un mensaje especial para los que no tienen credito activo.
             const msjSinDeuda = `¡Hola ${socio.nombre}! 👋 Vemos que actualmente **no registrás ningún crédito activo** ni deuda pendiente en nuestro sistema.\n\n` +
                                 `Si querés aprovechar y sacar un nuevo préstamo, te dejo estas opciones:\n\n` +
                                 `1️⃣ Solicitar nuevo crédito\n` +
@@ -172,7 +174,7 @@ export class BotController {
             
             await enviarMensaje(msjSinDeuda);
             
-            // Lo mandamos al mismo sub menu que los nuevos (que tiene las opciones de pedir credito).
+            // Lo mandamos al mismo sub menu que los nuevos que tiene las opciones de pedir credito.
             this.sesionesActivas.set(numero, PasoBot.MENU_NUEVO); 
             await asignarEtiqueta("SOCIO AL DIA"); 
             return;
@@ -180,12 +182,12 @@ export class BotController {
 
         // SI EXISTE Y ESTA EN MORA / REFINANCIACION
         if (socio.hoja === 'REFINANCIACION' || socio.hoja === 'AMBAS') {
-            this.deudaTemporal.set(numero, socio.deuda); // Guardamos la deuda para el simulador.
+            this.deudaTemporal.set(numero, socio.deuda);
             await enviarMensaje(MENUS.generarMenuMora(socio.nombre, socio.deuda));
             this.sesionesActivas.set(numero, PasoBot.MENU_MORA);
             await asignarEtiqueta("SOCIO MORA");
 
-        // 4. SI EXISTE Y ESTA ACTIVO AL DIA.
+        // SI EXISTE Y ESTA ACTIVO AL DIA.
         } else if (socio.hoja === 'CASHFLOW') {
             await enviarMensaje(MENUS.generarMenuActivo(socio));
             this.sesionesActivas.set(numero, PasoBot.MENU_ACTIVO);
@@ -236,7 +238,7 @@ export class BotController {
         } else if (opcion === '4') {
 
             await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! Que tengas un excelente día. 👋\n\n_Escribí 'Hola' para volver a empezar._");
-            this.forzarCierreSesion(numero); // Terminamos la sesion.
+            this.forzarCierreSesion(numero);
 
         } else {
             await enviarMensaje(MENUS.OPCION_INVALIDA);
@@ -254,7 +256,7 @@ export class BotController {
 
             await enviarMensaje(`✅ Perfecto. Has seleccionado el plan de *${cuotasElegidas} cuota(s)*.\n\nPara avanzar, por favor realizá el pago correspondiente y *envianos la foto o PDF del comprobante* por este chat.\n\nUn asesor revisará tu pago a la brevedad para impactarlo en el sistema. 👨‍💻`);
             
-            // Lo derivamos a humano para que quede el chat abierto esperando la foto.
+            // Lo deriva a un humano para que quede el chat abierto esperando la foto.
             this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
 
         } else if (opcion === '5') {
