@@ -16,7 +16,7 @@ export class WhatsAppClient {
     // Inicia la conexion con wppconnect.
     public async iniciar(): Promise<void> {
         try {
-            console.log('📱 Iniciando cliente de WhatsApp...');
+            console.log('Iniciando cliente de WhatsApp...');
             
             this.client = await wppconnect.create({
                 session: 'cooperativa-session', // Nombre de la sesion
@@ -26,6 +26,10 @@ export class WhatsAppClient {
                 },
                 statusFind: (statusSession, session) => {
                     console.log(`Estado de sesión de WhatsApp: ${statusSession}`);
+                    if (statusSession === 'browserClose' || statusSession === 'autocloseCalled') {
+                        console.log('Navegador crasheado. Forzando reinicio...');
+                        process.exit(1); 
+                    }
                 },
                 headless: true, 
                 puppeteerOptions: {

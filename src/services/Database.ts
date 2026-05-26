@@ -1,80 +1,70 @@
 import { GoogleSpreadsheet } from 'google-spreadsheet';
 import { JWT } from 'google-auth-library';
 
+// documentar luego.
+
+export interface CreditoDetalle {
+    fecha: string;
+    metodo: string;
+    montoSacado: number;
+    plazo: string;
+    cuotasPagas: string;
+    montoCuota: number;
+    deuda: number;
+    esActivo: boolean;
+    esMora: boolean;
+}
+
 export interface InfoSocio {
     nombre: string;
     dni: string;
-    deuda: number;
-    hoja: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS';
-    creditoActivo?: {
-        fecha: string;
-        metodo: string;
-        organismo: string;
-        nroCredito: string;
-        montoSacado: number;
-        plazo: string;
-        cuotasPagas: string;
-        montoCuota: number;
-    }
+    estadoGlobal: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS' | 'CANCELADO';
+    deudaTotal: number;
+    cbu: CreditoDetalle | null;
+    haberes: CreditoDetalle | null;
+    tieneAmbos: boolean;
 }
 
 export class DatabaseManager {
     private doc: GoogleSpreadsheet;
 
     constructor(spreadsheetId: string, clientEmail: string, privateKey: string) {
-        // Configuracion la autenticacion de Google.
         const serviceAccountAuth = new JWT({
             email: clientEmail,
             key: privateKey.replace(/\\n/g, '\n'),
             scopes: ['https://www.googleapis.com/auth/spreadsheets'],
         });
-
         this.doc = new GoogleSpreadsheet(spreadsheetId, serviceAccountAuth);
     }
 
     public async conectar(): Promise<void> {
         try {
-            console.log('Conectando a la base de datos...');
+            console.log('Conectando a la base de datos (Google Sheets)...');
             await this.doc.loadInfo();
-            console.log(`Base de datos conectada. Documento: ${this.doc.title}`);
+            console.log(`Base de datos conectada: ${this.doc.title}`);
         } catch (error) {
             console.error('Error al conectar con Google Sheets:', error);
             throw error;
         }
     }
 
-    // Lee cualquier formato y redondea. Si no se puede parsear, devuelve 0.
     private parsearDinero(valor: any): number {
-        if (valor === undefined || valor === null || valor === '') return 0;
+        if (!valor) return 0;
         if (typeof valor === 'number') return Math.round(valor);
-        
         let strVal = valor.toString().replace('$', '').replace(/\s/g, '');
-        
-        // Verifica si tiene ambos separadores (punto y coma).
         if (strVal.includes(',') && strVal.includes('.')) {
-            // Si la coma esta despues del punto.
-            if (strVal.indexOf(',') > strVal.indexOf('.')) {
-                strVal = strVal.replace(/\./g, '').replace(',', '.');
-            } 
-            // Si el punto esta despues de la coma.
-            else {
-                strVal = strVal.replace(/,/g, '');
-            }
-        } 
-        // Si solo tiene coma, asumimos decimales.
-        else if (strVal.includes(',')) {
+            strVal = strVal.indexOf(',') > strVal.indexOf('.') 
+                ? strVal.replace(/\./g, '').replace(',', '.') 
+                : strVal.replace(/,/g, '');
+        } else if (strVal.includes(',')) {
             strVal = strVal.replace(',', '.');
-        } 
-        // Si solo tiene puntos.
-        else if (strVal.split('.').length > 2) {
+        } else if (strVal.split('.').length > 2) {
             strVal = strVal.replace(/\./g, '');
         }
-
         const numero = parseFloat(strVal);
-        return isNaN(numero) ? 0 : Math.round(numero); 
+        return isNaN(numero) ? 0 : Math.round(numero);
     }
 
-    // Funcion auxiliar para formatear nombres.
     private formatearNombre(nombreCrudo: string): string {
         if (!nombreCrudo) return 'Socio';
         let partes = nombreCrudo.includes(',') ? nombreCrudo.split(',') : nombreCrudo.split(' ');
@@ -85,113 +75,104 @@ export class DatabaseManager {
     public async buscarSocioTotal(dniABuscar: string): Promise<InfoSocio | null> {
         const dniStr = dniABuscar.trim();
         
-        let nombreSocio = '';
-        let deudaTotal = 0;
-        let esMoroso = false;
-        let esActivo = false;
-        let procesadoEnRefi = false; 
-        let datosCreditoActivo: InfoSocio['creditoActivo'] = undefined;
+        let coincidenCashflow: any[] = [];
+        let coincidenRefi: any[] = [];
 
-        const ESTADOS_IGNORAR_O_CANCELADO = [
-            'ANSES', 'FALLECIDO', 'CANCELADO', 'REFINANCIACION CANCELADO'
-        ];
-        const ESTADOS_MORA = [
-            'SOTANO', 'REFINANCIACION V', 'REFINANCIACION', 'MOROSO', 
-            'INCOBRABLE', 'ANALISIS MOV', 'SOTEIN', 
-            'CONFINCRED', 'CONHER', 'DIAGRAMAS', 'MAGALI', 'MAYCOOP', 'TIZIANO'
-        ];
+        const ESTADOS_IGNORAR = ['ANSES', 'FALLECIDO', 'CANCELADO', 'REFINANCIACION CANCELADO'];
+        const ESTADOS_MORA = ['REFINANCIACION V', 'REFINANCIACION', 'MOROSO', 'SOTANO', 'ANALISIS MOV', 'INCOBRABLE', 'CONHER', 'DIAGRAMAS', 'SOTEIN'];
 
-        // REVISA HOJA REFINANCIACION
         const hojaRefi = this.doc.sheetsByTitle['REFINANCIACION'];
         if (hojaRefi) {
             await hojaRefi.loadHeaderRow(3); 
             const filas = await hojaRefi.getRows();
-            const filasSocio = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
-
-            for (const f of filasSocio) {
-                if (!nombreSocio) nombreSocio = this.formatearNombre((f.get('APELLIDO Y NOMBRE') || '').toString());
-                
-                const estado = (f.get('ESTADO') || '').toString().toUpperCase().trim();
-                const rawDeuda = f.get('MONTO ACTUALIZADO'); 
-                let deuda = this.parsearDinero(rawDeuda);
-                
-                if (deuda < 0) deuda = 0;
-
-                if (deuda > 0 && !ESTADOS_IGNORAR_O_CANCELADO.includes(estado)) {
-                    esMoroso = true;
-                    procesadoEnRefi = true;
-                    deudaTotal += deuda;
-                }
-            }
+            coincidenRefi = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
         }
 
-        // REVISA HOJA CASHFLOW
         const hojaCashflow = this.doc.sheetsByTitle['CASHFLOW'];
         if (hojaCashflow) {
             await hojaCashflow.loadHeaderRow(2); 
             const filas = await hojaCashflow.getRows();
-            const filasSocio = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
+            coincidenCashflow = filas.filter(f => (f.get('CUIL') || '').toString().includes(dniStr));
+        }
 
-            for (const f of filasSocio) {
-                const apellido = f.get('APELLIDO') || '';
-                const nombre = f.get('NOMBRE') || '';
-                if (nombre || apellido) {
-                    nombreSocio = this.formatearNombre(`${nombre} ${apellido}`);
-                }
+        if (coincidenCashflow.length === 0 && coincidenRefi.length === 0) return null;
 
+        let nombreSocio = 'Socio';
+        if (coincidenCashflow.length > 0) nombreSocio = this.formatearNombre(`${coincidenCashflow[0].get('NOMBRE')} ${coincidenCashflow[0].get('APELLIDO')}`);
+        else if (coincidenRefi.length > 0) nombreSocio = this.formatearNombre(coincidenRefi[0].get('APELLIDO Y NOMBRE'));
+
+        let cbu: CreditoDetalle | null = null;
+        let haberes: CreditoDetalle | null = null;
+
+        const procesarFilas = (filas: any[], esRefi: boolean) => {
+            for (const f of filas) {
                 const estado = (f.get('ESTADO') || '').toString().toUpperCase().trim();
-                const rawDeuda = f.get('DEUDA');
-                let deuda = this.parsearDinero(rawDeuda);
-
-                if (rawDeuda === undefined || rawDeuda === null || rawDeuda === '') {
-                    deuda = this.parsearDinero(f.get('MONTO'));
-                }
+                const metodo = (f.get('METODO') || '').toString().toUpperCase().trim();
                 
+                if (ESTADOS_IGNORAR.includes(estado)) continue;
+
+                let deuda = this.parsearDinero(esRefi ? f.get('MONTO ACTUALIZADO') : (f.get('DEUDA') || f.get('MONTO')));
                 if (deuda < 0) deuda = 0;
 
-                if (deuda > 0 && !ESTADOS_IGNORAR_O_CANCELADO.includes(estado)) {
-                    if (ESTADOS_MORA.includes(estado)) {
-                        if (!procesadoEnRefi) {
-                            esMoroso = true;
-                            deudaTotal += deuda;
-                        }
-                    } else {
-                        esActivo = true;
-                        deudaTotal += deuda;
-                        
-                        // Guarda los datos del ultimo credito activo que encuentre.
-                        datosCreditoActivo = {
-                            fecha: (f.get('FECHA') || '').toString(),
-                            metodo: (f.get('METODO') || '').toString().trim(),
-                            organismo: (f.get('ORGANISMO') || '').toString().trim(),
-                            nroCredito: (f.get('NRO CREDITO') || '').toString(),
-                            montoSacado: this.parsearDinero(f.get('MONTO')),
-                            plazo: (f.get('PLAZO') || '').toString(),
-                            cuotasPagas: (f.get('CTAS. PAGAS') || '0').toString(),
-                            montoCuota: this.parsearDinero(f.get('MONTO_CTA'))
-                        };
-                    }
+                const esMora = esRefi || ESTADOS_MORA.includes(estado);
+                const esActivo = !esMora && estado === 'ACTIVO';
+                
+                if (deuda === 0 && !esActivo) continue;
+
+                const credito: CreditoDetalle = {
+                    fecha: (f.get('FECHA') || '').toString(),
+                    metodo: metodo,
+                    montoSacado: this.parsearDinero(f.get('MONTO')),
+                    plazo: (f.get('PLAZO') || '0').toString(),
+                    cuotasPagas: (esRefi ? f.get('CTAS PAGAS') : f.get('CTAS. PAGAS') || '0').toString(),
+                    montoCuota: this.parsearDinero(f.get('MONTO_CTA')),
+                    deuda: deuda,
+                    esActivo: esActivo,
+                    esMora: esMora
+                };
+
+                const esMetodoHaberes = metodo.includes('HABERES') || metodo.includes('AMPEAL');
+                
+                if (esMetodoHaberes) {
+                    if (!haberes || credito.esMora || credito.esActivo) haberes = credito;
+                } else {
+                    if (!cbu || credito.esMora || credito.esActivo) cbu = credito;
                 }
             }
+        };
+
+        procesarFilas(coincidenCashflow, false);
+        procesarFilas(coincidenRefi, true);
+
+        const cbuFinal = cbu as CreditoDetalle | null;
+        const haberesFinal = haberes as CreditoDetalle | null;
+
+        const deudaCbu = cbuFinal?.esMora === true ? (cbuFinal.deuda || 0) : 0;
+        const deudaHaberes = haberesFinal?.esMora === true ? (haberesFinal.deuda || 0) : 0;
+        const deudaTotal = deudaCbu + deudaHaberes;
+        
+        let estadoGlobal: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS' | 'CANCELADO' = 'CANCELADO';
+        
+        if (cbuFinal?.esMora === true || haberesFinal?.esMora === true) {
+            estadoGlobal = 'REFINANCIACION';
+        } else if (cbuFinal?.esActivo === true || haberesFinal?.esActivo === true) {
+            estadoGlobal = 'CASHFLOW';
         }
 
-        // EMPAQUETADO FINAL
-        if (nombreSocio) {
-            let estadoFinal: 'CASHFLOW' | 'REFINANCIACION' | 'AMBAS' = 'CASHFLOW';
-            
-            if (esMoroso) estadoFinal = 'REFINANCIACION';
-            if (esMoroso && esActivo) estadoFinal = 'AMBAS';
-
-            return {
-                nombre: nombreSocio,
-                dni: dniStr,
-                deuda: deudaTotal, 
-                hoja: estadoFinal,
-                creditoActivo: datosCreditoActivo 
-            };
+        if ((cbuFinal?.esMora === true && haberesFinal?.esMora === true) || 
+            (cbuFinal?.esActivo === true && haberesFinal?.esActivo === true)) {
+            estadoGlobal = 'AMBAS';
         }
 
-        return null;
+        return {
+            nombre: nombreSocio,
+            dni: dniStr,
+            estadoGlobal,
+            deudaTotal,
+            cbu: cbuFinal,
+            haberes: haberesFinal,
+            tieneAmbos: cbuFinal !== null && haberesFinal !== null
+        };
     }
 }
 
