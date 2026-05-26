@@ -326,20 +326,23 @@ export class BotController {
                        `🔹 *Monto Otorgado:* $${credito.montoSacado.toLocaleString('es-AR')}\n` +
                        `🔹 *Cuotas Pagas:* ${credito.cuotasPagas} de ${credito.plazo}\n` +
                        `🔹 *Valor Cuota:* $${credito.montoCuota.toLocaleString('es-AR')}\n\n` +
-                       `1️⃣ Ver el otro crédito\n` +
-                       `2️⃣ Hablar con un asesor\n` +
-                       `3️⃣ Salir`;
+                       `👉 *¿Qué más querés hacer?*\n` +
+                       `1️⃣ Ver datos crédito CBU\n` +
+                       `2️⃣ Ver datos crédito Haberes\n` +
+                       `3️⃣ Hablar con un asesor\n` +
+                       `4️⃣ Salir`;
             
             await enviarMensaje(msjDetalle);
             
-        } else if (opcion === '3' || (opcion === '2' && texto === '2')) { 
+        } else if (opcion === '3') { 
             await asignarEtiqueta("CONSULTA");
             await enviarMensaje(MENUS.DERIVAR_HUMANO);
             this.sesionesActivas.set(numero, PasoBot.HABLANDO_CON_HUMANO);
             
-        } else if (opcion === '4' || opcion === '3') { 
+        } else if (opcion === '4') { 
             await enviarMensaje("¡Gracias por comunicarte con MAYCOOP! 👋");
             this.forzarCierreSesion(numero);
+            
         } else {
             await enviarMensaje(MENUS.OPCION_INVALIDA);
         }
