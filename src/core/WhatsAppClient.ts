@@ -63,10 +63,10 @@ export class WhatsAppClient {
         }
 
         // Lo silencia por 30 minutos (1800000 milisegundos).
-        console.log(`👤 MODO HUMANO: Bot silenciado por 30 min. en el chat ${telefono}`);
+        console.log(`Bot silenciado por 30 min. en el chat ${telefono}`);
         const relojModoHumano = setTimeout(() => {
             this.chatsSilenciados.delete(telefono);
-            console.log(`🤖 MODO BOT reactivado en el chat ${telefono}`);
+            console.log(`Bot reactivado en el chat ${telefono}`);
         }, 1800000); 
 
         this.chatsSilenciados.set(telefono, relojModoHumano);
@@ -90,7 +90,7 @@ export class WhatsAppClient {
                 idEtiquetaFinal = etiquetaExistente.id;
             } else {
                 // Si no existe, la crea.
-                console.log(`🏷️ Creando nueva etiqueta en WhatsApp: ${nombreEtiqueta}`);
+                console.log(`Nueva etiqueta en WhatsApp: ${nombreEtiqueta}`);
                 await this.client.addNewLabel(nombreEtiqueta); 
                 
                 // Vuelve a pedir la lista de etiquetas actualizada para obtener el ID de la nueva.
@@ -105,12 +105,12 @@ export class WhatsAppClient {
             // Asigna la etiqueta.
             if (idEtiquetaFinal) {
                 await this.client.addOrRemoveLabels(telefono, [{ labelId: idEtiquetaFinal, type: 'add' }]);
-                console.log(`✅ Etiqueta '${nombreEtiqueta}' agregada a ${telefono}`);
+                console.log(`Etiqueta '${nombreEtiqueta}' agregada a ${telefono}`);
             } else {
-                console.warn(`⚠️ No se pudo obtener un ID válido para la etiqueta '${nombreEtiqueta}'`);
+                console.warn(`No se pudo obtener un ID válido para la etiqueta '${nombreEtiqueta}'`);
             }
         } catch (error) {
-            console.error(`❌ Error al gestionar la etiqueta '${nombreEtiqueta}':`, error);
+            console.error(`Error al gestionar la etiqueta '${nombreEtiqueta}':`, error);
         }
     }
 
@@ -160,7 +160,7 @@ export class WhatsAppClient {
                 return; 
             }
 
-            console.log(`📩 Mensaje recibido de ${message.from}: ${message.body}`);
+            console.log(`Mensaje recibido de ${message.from}: ${message.body}`);
 
             // Le pasa el mensaje al cerebro.
             this.controlador.procesarMensaje(

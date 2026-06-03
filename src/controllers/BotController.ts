@@ -1,8 +1,7 @@
-import { DatabaseManager, InfoSocio } from '../services/Database';
-import { MENUS } from '../config/menus';
+import { DatabaseManager, InfoSocio } from '../services/Database'; // Importamos la interfaz InfoSocio para usarla en el controlador.
+import { MENUS } from '../config/menus'; // Importamos los menús para usarlos en el controlador.
 
-// documentar luego.
-
+// Archivo del controlador principal del bot, donde se maneja la lógica de cada paso, las sesiones activas, y la interacción con la base de datos y el cliente de WhatsApp.
 export enum PasoBot {
     INICIO = 'INICIO',
     MENU_PRINCIPAL = 'MENU_PRINCIPAL',
@@ -17,6 +16,7 @@ export enum PasoBot {
     ESPERANDO_CANTIDAD_CUOTAS = 'ESPERANDO_CANTIDAD_CUOTAS' 
 }
 
+// El BotController es el "cerebro" del bot, donde se maneja la lógica de cada paso, las sesiones activas, y la interacción con la base de datos y el cliente de WhatsApp.
 export class BotController {
     private sesionesActivas: Map<string, PasoBot>;
     private temporizadores: Map<string, NodeJS.Timeout>;
@@ -34,6 +34,7 @@ export class BotController {
         this.db = db;
     }
 
+    // Método para reiniciar el temporizador de inactividad de un usuario. Si el usuario no interactúa durante 10 minutos, se cierra su sesión automáticamente.
     private reiniciarTemporizador(numero: string, enviarMensaje: Function): void {
         if (this.temporizadores.has(numero)) clearTimeout(this.temporizadores.get(numero));
 
@@ -45,16 +46,20 @@ export class BotController {
         this.temporizadores.set(numero, nuevoReloj);
     }
 
+    // Método principal para procesar cada mensaje entrante. Recibe el número del usuario, el texto del mensaje, y funciones para enviar mensajes y asignar etiquetas.
     public async procesarMensaje(numero: string, texto: string, enviarMensaje: (texto: string) => Promise<void>, asignarEtiqueta: (etiqueta: string) => Promise<void>): Promise<void> {
         this.reiniciarTemporizador(numero, enviarMensaje);
         
+        // Si el mensaje es "Hola" o "Volver", reiniciamos la sesión del usuario.
         if (texto.toLowerCase() === 'hola' || texto.toLowerCase() === 'volver') {
             this.sesionesActivas.set(numero, PasoBot.INICIO);
         }
 
+        // Obtenemos el paso actual del usuario. Si no tiene sesión activa, se le asigna el paso de INICIO.
         const pasoActual = this.sesionesActivas.get(numero) || PasoBot.INICIO;
         console.log(`Procesando a ${numero} en el paso: ${pasoActual}`);
 
+        // Dependiendo del paso actual, se llama al manejador correspondiente para procesar el mensaje. Cada manejador se encarga de una parte específica del flujo de conversación.
         switch (pasoActual) {
             case PasoBot.INICIO:
                 await enviarMensaje(MENUS.SALUDO_PRINCIPAL);
@@ -97,6 +102,7 @@ export class BotController {
         }
     }
 
+    // Método para cerrar la sesión de un usuario, eliminando toda su información temporal y deteniendo cualquier temporizador activo.
     public forzarCierreSesion(numero: string): void {
         this.sesionesActivas.delete(numero);
         this.deudaTemporal.delete(numero);
@@ -109,6 +115,7 @@ export class BotController {
         }
     }
 
+    // Método para iniciar el bot, donde se conecta a la base de datos y al cliente de WhatsApp, y se prepara para recibir mensajes.
     private async manejadorMenuPrincipal(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim(); 
         if (opcion === '1') {
@@ -125,6 +132,7 @@ export class BotController {
         }
     }
 
+    // Manejador para el paso de "Esperando DNI".
     private async manejadorEsperandoDni(numero: string, texto: string, enviarMensaje: Function): Promise<void> {
         const dni = texto.trim();
         if (!/^\d+$/.test(dni) || dni.length < 7 || dni.length > 9) {
@@ -137,21 +145,27 @@ export class BotController {
         this.sesionesActivas.set(numero, PasoBot.CONFIRMANDO_DNI);
     }
 
+    // 
     private async manejadorConfirmandoDni(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim();
         
+        // Si el usuario confirma que el DNI es correcto, se busca en la base de datos. Si no, se le pide que lo ingrese nuevamente.
         if (opcion === '2') {
             await enviarMensaje(MENUS.SOLICITAR_DNI);
             this.sesionesActivas.set(numero, PasoBot.ESPERANDO_DNI);
             return;
+        // Si la opción no es ni "1" ni "2", se le informa que la opción no es válida y se le pide que confirme nuevamente.
         } else if (opcion !== '1') {
             await enviarMensaje(MENUS.OPCION_INVALIDA);
             return;
         }
 
+        // Si el DNI es confirmado, se busca en la base de datos y se determina qué menú mostrar dependiendo de su estado. 
+        // Si no se encuentra el DNI, se muestra un mensaje informando que no se encontraron créditos asociados.
         const dni = this.dniTemporal.get(numero)!;
         await enviarMensaje(MENUS.BUSCANDO);
 
+        // Buscamos el DNI en la base de datos. Si ocurre un error durante la búsqueda, se le informa al usuario y se cierra la sesión.
         const socio = await this.db.buscarSocioTotal(dni);
 
         if (!socio) {
@@ -162,6 +176,9 @@ export class BotController {
 
         this.datosSocioTemporal.set(numero, socio);
 
+        // Dependiendo del estado global del socio, se muestra un menú diferente. 
+        // Si el socio tiene deuda o refinanciación, se le muestra el menú de mora. 
+        // Si tiene un crédito activo al día, se le muestra el menú de activo. Si no se encuentra el DNI o no hay créditos asociados, se le muestra el menú para nuevos usuarios.
         if (socio.estadoGlobal === 'REFINANCIACION' || socio.estadoGlobal === 'AMBAS') {
             this.deudaTemporal.set(numero, socio.deudaTotal);
             await asignarEtiqueta("MORA"); 
@@ -177,8 +194,9 @@ export class BotController {
         }
     }
 
-    // --- MENÚS ---
+    // --- MENÚS MORA ---
 
+    // Manejador para el menú de opciones para socios con deuda o refinanciación.
     private async manejadorMenuMora(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim();
         if (opcion === '1') {
@@ -214,6 +232,7 @@ export class BotController {
         }
     }
 
+    // Manejador para el menú de opciones para socios con dos créditos activos.
     private async enviarDatosDePago(enviarMensaje: Function, cuotas: number, valorCuota: number): Promise<void> {
         const msj = `✅ Perfecto. Has seleccionado el plan de *${cuotas} cuota(s)* de *$${valorCuota.toLocaleString('es-AR')}*.\n\n` +
                     `🏦 *DATOS PARA EL PAGO*\n` +
@@ -225,6 +244,7 @@ export class BotController {
         await enviarMensaje(msj);
     }
 
+    // Manejador para el simulador de cuotas en el menú de mora.
     private async manejadorSimuladorCuotas(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim();
         const deuda = this.deudaTemporal.get(numero) || 0;
@@ -247,6 +267,7 @@ export class BotController {
         }
     }
 
+    // Manejador para la cantidad de cuotas personalizada en el menú de mora.
     private async manejadorCantidadCuotas(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const cuotas = parseInt(texto.trim());
         const deuda = this.deudaTemporal.get(numero) || 0;
@@ -263,6 +284,7 @@ export class BotController {
 
     // --- MENÚS ACTIVOS / NUEVOS ---
 
+    // Manejador para el menú de opciones para socios con créditos activos al día.
     private async manejadorMenuActivo(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim();
         if (opcion === '1') {
@@ -285,6 +307,7 @@ export class BotController {
         }
     }
 
+    // Manejador para el menú de opciones para nuevos usuarios o socios sin créditos activos.
     private async manejadorMenuNuevo(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim();
         if (opcion === '1') {
@@ -303,6 +326,7 @@ export class BotController {
         }
     }
 
+    // Manejador para el menú de opciones para socios con dos créditos activos.
     private async manejadorMenuDosActivos(numero: string, texto: string, enviarMensaje: Function, asignarEtiqueta: Function): Promise<void> {
         const opcion = texto.trim();
         const socio = this.datosSocioTemporal.get(numero);
